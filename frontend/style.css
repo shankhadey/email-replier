@@ -728,3 +728,59 @@ header {
   .modal { border-radius: 8px 8px 0 0; max-height: 92vh; }
   .classification-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ── Auth Wall ──────────────────────────────────── */
+.auth-wall-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 16px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.auth-logo {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.auth-subtitle {
+  font-size: 14px;
+  color: var(--text-dim);
+  max-width: 300px;
+}
+
+.btn-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  color: white;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  margin-top: 8px;
+}
+
+.btn-auth:hover { opacity: 0.85; }
+
+.auth-note {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dimmer);
+  max-width: 320px;
+  line-height: 1.6;
+}

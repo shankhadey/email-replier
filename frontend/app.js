@@ -13,6 +13,8 @@ let pollHandle = null;
 // ── Init ─────────────────────────────────────────
 
 async function init() {
+  const authed = await checkAuth();
+  if (!authed) return;
   await loadConfig();
   await loadQueue();
   await loadSchedulerStatus();
@@ -407,3 +409,31 @@ document.addEventListener('keydown', (e) => {
 // ── Start ─────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', init);
+
+// ── Auth Check ───────────────────────────────────
+
+async function checkAuth() {
+  try {
+    const res = await fetch(`${API}/auth/status`);
+    const data = await res.json();
+    if (!data.authorized) {
+      showAuthWall();
+      return false;
+    }
+    hideAuthWall();
+    return true;
+  } catch (e) {
+    showAuthWall();
+    return false;
+  }
+}
+
+function showAuthWall() {
+  document.getElementById('auth-wall').classList.remove('hidden');
+  document.getElementById('main-content').classList.add('hidden');
+}
+
+function hideAuthWall() {
+  document.getElementById('auth-wall').classList.add('hidden');
+  document.getElementById('main-content').classList.remove('hidden');
+}
