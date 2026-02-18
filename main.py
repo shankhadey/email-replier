@@ -93,9 +93,24 @@ def auth_callback(request: Request, code: str = None, error: str = None):
         save_token_from_flow(_oauth_flow, code)
         _oauth_flow = None
         return HTMLResponse("""
-            <h2 style='font-family:monospace;color:green'>Authorization successful.</h2>
-            <p style='font-family:monospace'>token.json saved.
-            <a href='/'>Go to the app</a></p>
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset='UTF-8'>
+              <meta http-equiv='refresh' content='2;url=/'>
+              <style>
+                body { background:#0a0a0b; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; font-family:'IBM Plex Mono',monospace; flex-direction:column; gap:16px; }
+                .logo { color:#5b8dee; font-size:18px; letter-spacing:0.15em; font-weight:600; }
+                .msg { color:#3ecf8e; font-size:14px; }
+                .sub { color:#4a4a56; font-size:11px; }
+              </style>
+            </head>
+            <body>
+              <div class='logo'>INBOX PILOT</div>
+              <div class='msg'>Authorization successful.</div>
+              <div class='sub'>Redirecting to app...</div>
+            </body>
+            </html>
         """)
     except Exception as e:
         logger.error(f"Auth callback error: {e}")
