@@ -1,14 +1,13 @@
 """
 Google OAuth2 authentication.
-Place your credentials.json (downloaded from Google Cloud Console) in the project root.
-On first run, a browser window will open for authorization. Token is saved to token.json.
+Supports both local flow and web-based flow (for Render/server deployments).
 """
 
 import os
 from pathlib import Path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 from googleapiclient.discovery import build
 
 CREDENTIALS_FILE = Path("credentials.json")
@@ -30,21 +29,43 @@ def get_credentials() -> Credentials:
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
+            with open(TOKEN_FILE, "w") as f:
+                f.write(creds.to_json())
         else:
-            if not CREDENTIALS_FILE.exists():
-                raise FileNotFoundError(
-                    "credentials.json not found. Download it from Google Cloud Console "
-                    "(APIs & Services > Credentials > OAuth 2.0 Client IDs) and place it "
-                    "in the project root."
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(CREDENTIALS_FILE), SCOPES
+            raise RuntimeError(
+                "No valid token found. Visit /auth to authorize the app."
             )
-            creds = flow.run_local_server(port=0)
 
-        with open(TOKEN_FILE, "w") as f:
-            f.write(creds.to_json())
+    return creds
 
+
+def is_authorized() -> bool:
+    """Check if a valid token exists."""
+    try:
+        get_credentials()
+        return True
+    except Exception:
+        return False
+
+
+def build_web_flow(redirect_uri: str) -> Flow:
+    """Build an OAuth flow for web-based authorization."""
+    if not CREDENTIALS_FILE.exists():
+        raise FileNotFoundError("credentials.json not found. Add it as a secret file in Render.")
+    flow = Flow.from_client_secrets_file(
+        str(CREDENTIALS_FILE),
+        scopes=SCOPES,
+        redirect_uri=redirect_uri,
+    )
+    return flow
+
+
+def save_token_from_flow(flow: Flow, code: str):
+    """Exchange auth code for token and save to token.json."""
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    with open(TOKEN_FILE, "w") as f:
+        f.write(creds.to_json())
     return creds
 
 

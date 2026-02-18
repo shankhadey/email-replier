@@ -6,9 +6,9 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
@@ -20,12 +20,16 @@ from database import (
 from gmail_client import send_reply, create_reply_draft
 from config import load_config, save_config
 from scheduler import start_scheduler, stop_scheduler, run_now, get_status, reschedule
+from auth import build_web_flow, save_token_from_flow, is_authorized
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# In-memory OAuth flow store (single-user app, this is fine)
+_oauth_flow = None
 
 
 @asynccontextmanager
@@ -52,6 +56,55 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 @app.get("/")
 def index():
     return FileResponse("frontend/index.html")
+
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
+
+@app.get("/auth")
+def start_auth(request: Request):
+    """Start the Google OAuth2 flow. Visit this URL in your browser to authorize."""
+    global _oauth_flow
+    redirect_uri = str(request.base_url) + "auth/callback"
+    _oauth_flow = build_web_flow(redirect_uri)
+    auth_url, _ = _oauth_flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+    )
+    return RedirectResponse(auth_url)
+
+
+@app.get("/auth/callback")
+def auth_callback(request: Request, code: str = None, error: str = None):
+    """Google redirects here after user authorizes."""
+    global _oauth_flow
+    if error:
+        return HTMLResponse(f"<h2>Authorization failed: {error}</h2>", status_code=400)
+    if not code:
+        return HTMLResponse("<h2>No authorization code received.</h2>", status_code=400)
+    if not _oauth_flow:
+        return HTMLResponse(
+            "<h2>OAuth flow expired. Please visit <a href='/auth'>/auth</a> again.</h2>",
+            status_code=400,
+        )
+    try:
+        redirect_uri = str(request.base_url) + "auth/callback"
+        _oauth_flow.redirect_uri = redirect_uri
+        save_token_from_flow(_oauth_flow, code)
+        _oauth_flow = None
+        return HTMLResponse("""
+            <h2 style='font-family:monospace;color:green'>Authorization successful.</h2>
+            <p style='font-family:monospace'>token.json saved.
+            <a href='/'>Go to the app</a></p>
+        """)
+    except Exception as e:
+        logger.error(f"Auth callback error: {e}")
+        return HTMLResponse(f"<h2>Error saving token: {e}</h2>", status_code=500)
+
+
+@app.get("/auth/status")
+def auth_status():
+    return {"authorized": is_authorized()}
 
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -111,7 +164,7 @@ def update_draft(item_id: int, body: DraftUpdate):
 
 
 class ApproveAction(BaseModel):
-    action: str  # "send" or "discard"
+    action: str  # "send", "draft", or "discard"
 
 
 @app.post("/api/queue/{item_id}/action")
@@ -123,11 +176,9 @@ def take_action(item_id: int, body: ApproveAction):
         raise HTTPException(400, f"Item already actioned: {item['status']}")
 
     if body.action == "send":
-        classification = item.get("classification", {})
         sender_email = _extract_email(item["sender"])
         subject = item["subject"]
         reply_subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
-
         success = send_reply(
             thread_id=item["thread_id"],
             to=sender_email,
