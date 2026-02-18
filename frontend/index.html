@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inbox Pilot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- Header -->
+    <header>
+      <div class="header-left">
+        <span class="logo">INBOX PILOT</span>
+        <span class="divider">/</span>
+        <span id="status-dot" class="status-dot" title="Scheduler status"></span>
+        <span id="status-label" class="status-label">connecting...</span>
+      </div>
+      <div class="header-right">
+        <button class="btn-ghost" id="btn-run-now" title="Poll now">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+          Poll now
+        </button>
+        <button class="btn-ghost" id="btn-settings" title="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+          Settings
+        </button>
+      </div>
+    </header>
+
+    <!-- Autonomy Bar -->
+    <div class="autonomy-bar">
+      <div class="autonomy-label">
+        <span class="mono">AUTONOMY</span>
+        <span id="autonomy-description" class="autonomy-desc">Loading...</span>
+      </div>
+      <div class="slider-track">
+        <span class="slider-tick active" data-level="1" onclick="setAutonomy(1)">
+          <span class="tick-line"></span>
+          <span class="tick-label">REVIEW ALL</span>
+        </span>
+        <span class="slider-tick" data-level="2" onclick="setAutonomy(2)">
+          <span class="tick-line"></span>
+          <span class="tick-label">SMART</span>
+        </span>
+        <span class="slider-tick" data-level="3" onclick="setAutonomy(3)">
+          <span class="tick-line"></span>
+          <span class="tick-label">FULL AUTO</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+      <div class="stat">
+        <span class="stat-value" id="stat-pending">0</span>
+        <span class="stat-label">PENDING</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value" id="stat-sent">0</span>
+        <span class="stat-label">SENT</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value" id="stat-drafted">0</span>
+        <span class="stat-label">DRAFTED</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value" id="stat-skipped">0</span>
+        <span class="stat-label">SKIPPED</span>
+      </div>
+      <div class="last-poll">
+        <span class="mono" id="last-poll-time">Last poll: --</span>
+      </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="filter-tabs">
+      <button class="tab active" data-filter="pending" onclick="setFilter('pending')">Pending</button>
+      <button class="tab" data-filter="sent" onclick="setFilter('sent')">Sent</button>
+      <button class="tab" data-filter="drafted" onclick="setFilter('drafted')">Drafted</button>
+      <button class="tab" data-filter="all" onclick="setFilter('all')">All</button>
+    </div>
+
+    <!-- Email Queue -->
+    <div id="queue-container">
+      <div id="empty-state" class="empty-state hidden">
+        <span class="mono">// no emails in this view</span>
+      </div>
+      <div id="queue-list"></div>
+    </div>
+
+  </div>
+
+  <!-- Email Detail Modal -->
+  <div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal(event)">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <div class="modal-meta">
+          <span id="modal-sender" class="modal-sender"></span>
+          <span class="divider">&middot;</span>
+          <span id="modal-subject" class="modal-subject"></span>
+        </div>
+        <button class="btn-ghost" onclick="closeModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-section">
+          <div class="section-header">ORIGINAL</div>
+          <div id="modal-original" class="email-body-text"></div>
+        </div>
+
+        <div class="modal-section">
+          <div class="section-header">
+            DRAFT REPLY
+            <button class="btn-micro" onclick="toggleEdit()">EDIT</button>
+          </div>
+          <div id="modal-draft-view" class="email-body-text draft-text"></div>
+          <textarea id="modal-draft-edit" class="draft-editor hidden" rows="10"></textarea>
+          <button id="btn-save-draft" class="btn-ghost hidden" onclick="saveDraft()">Save changes</button>
+        </div>
+
+        <div class="modal-section">
+          <div class="section-header">AI ANALYSIS</div>
+          <div id="modal-classification" class="classification-grid"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer" id="modal-footer">
+        <div id="modal-routing-reason" class="routing-reason"></div>
+        <div class="modal-actions" id="modal-actions"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-overlay" class="modal-overlay hidden" onclick="closeSettings(event)">
+    <div class="modal settings-modal" id="settings-modal">
+      <div class="modal-header">
+        <span class="mono">SETTINGS</span>
+        <button class="btn-ghost" onclick="closeSettings()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="settings-body">
+        <div class="setting-row">
+          <label>Poll interval (minutes)</label>
+          <input type="number" id="setting-interval" min="5" max="120" />
+        </div>
+        <div class="setting-row">
+          <label>Poll start hour (0-23)</label>
+          <input type="number" id="setting-start" min="0" max="23" />
+        </div>
+        <div class="setting-row">
+          <label>Poll end hour (0-23)</label>
+          <input type="number" id="setting-end" min="0" max="23" />
+        </div>
+        <div class="setting-row">
+          <label>Low confidence threshold (0-1)</label>
+          <input type="number" id="setting-threshold" min="0" max="1" step="0.05" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" onclick="saveSettings()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
