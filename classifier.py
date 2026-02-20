@@ -111,14 +111,14 @@ Body:
             break
 
     logger.error(f"Classification error: {last_error}")
-        # Safe fallback: treat as needing review
-        return {
-            "needs_reply": True,
-            "sender_priority": "unknown",
-            "confidence": 0.0,
-            "is_critical": False,
-            "needs_calendar": False,
-            "needs_gdrive": False,
-            "gdrive_query": None,
-            "reasoning": f"Classification failed: {str(e)}",
-        }
+    # Safe fallback: treat as needing review
+    return {
+        "needs_reply": True,
+        "sender_priority": "unknown",
+        "confidence": 0.0,
+        "is_critical": False,
+        "needs_calendar": False,
+        "needs_gdrive": False,
+        "gdrive_query": None,
+        "reasoning": f"Classification failed: {str(last_error)}",
+    }
