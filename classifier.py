@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Optional
 
 import anthropic
@@ -71,30 +72,45 @@ Body:
 {body[:2000]}
 """
 
-    try:
-        response = client.messages.create(
-            model=config["anthropic_model"],
-            max_tokens=512,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
+    max_retries = 3
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            response = client.messages.create(
+                model=config["anthropic_model"],
+                max_tokens=512,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
 
-        raw = response.content[0].text.strip()
-        # Strip markdown code fences if present
-        raw = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
-        result = json.loads(raw)
+            raw = response.content[0].text.strip()
+            # Strip markdown code fences if present
+            raw = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
+            result = json.loads(raw)
 
-        # Validate required keys
-        required = ["needs_reply", "sender_priority", "confidence", "is_critical",
-                    "needs_calendar", "needs_gdrive"]
-        for key in required:
-            if key not in result:
-                raise ValueError(f"Missing key: {key}")
+            # Validate required keys
+            required = ["needs_reply", "sender_priority", "confidence", "is_critical",
+                        "needs_calendar", "needs_gdrive"]
+            for key in required:
+                if key not in result:
+                    raise ValueError(f"Missing key: {key}")
 
-        return result
+            return result
 
-    except Exception as e:
-        logger.error(f"Classification error: {e}")
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529 and attempt < max_retries - 1:
+                wait = 10 * (attempt + 1)
+                logger.warning(f"Anthropic overloaded (529), retrying in {wait}s... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(wait)
+                last_error = e
+            else:
+                last_error = e
+                break
+        except Exception as e:
+            last_error = e
+            break
+
+    logger.error(f"Classification error: {last_error}")
         # Safe fallback: treat as needing review
         return {
             "needs_reply": True,

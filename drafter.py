@@ -5,6 +5,7 @@ Optionally injects calendar availability and GDrive attachment names.
 
 import logging
 import os
+import time
 from typing import Optional
 
 import anthropic
@@ -53,6 +54,7 @@ def draft_reply(
     classification: dict,
     calendar_slots: Optional[str] = None,
     attachment_names: Optional[list[str]] = None,
+    thread_context: Optional[str] = None,
 ) -> str:
     """Draft a reply in Shankha's voice."""
     config = load_config()
@@ -66,27 +68,42 @@ def draft_reply(
 
     context_block = ("\n\n" + "\n\n".join(context_parts)) if context_parts else ""
 
-    user_prompt = f"""Draft a reply to this email:
+    thread_block = ""
+    if thread_context:
+        thread_block = f"\n\nPrior conversation context (for reference only, do not repeat):\n{thread_context[:1500]}"
+
+    user_prompt = f"""Draft a reply to the latest email in this thread:
 
 From: {sender}
 Subject: {subject}
 Sender priority: {classification.get('sender_priority', 'unknown')}
 
-Email body:
+Latest email (reply to THIS one):
 {body[:2000]}
-{context_block}
+{context_block}{thread_block}
 
-Write the reply body only.
+Write the reply body only. Reply to the latest email above, not to earlier messages in the thread.
 """
 
-    try:
-        response = client.messages.create(
-            model=config["anthropic_model"],
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        return response.content[0].text.strip()
-    except Exception as e:
-        logger.error(f"Draft error: {e}")
-        return ""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = client.messages.create(
+                model=config["anthropic_model"],
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            return response.content[0].text.strip()
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529 and attempt < max_retries - 1:
+                wait = 10 * (attempt + 1)
+                logger.warning(f"Anthropic overloaded (529), retrying in {wait}s... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(wait)
+            else:
+                logger.error(f"Draft error after {attempt + 1} attempts: {e}")
+                return ""
+        except Exception as e:
+            logger.error(f"Draft error: {e}")
+            return ""
+    return ""
