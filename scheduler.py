@@ -35,7 +35,7 @@ def _poll():
     read_past = config.get("read_past_unread", True)
     epoch_filter = None if read_past else _service_start_epoch
     logger.info(f"Polling Gmail... (read_past_unread={read_past})")
-    emails = fetch_unread_emails(max_results=20, after_epoch=epoch_filter)
+    emails = fetch_unread_emails(max_results=50, after_epoch=epoch_filter)
     results = []
     for email in emails:
         result = process_email(email)

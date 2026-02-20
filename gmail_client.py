@@ -25,10 +25,12 @@ def fetch_unread_emails(max_results: int = 20, after_epoch: int = None) -> list[
         q = "is:unread in:inbox -category:promotions -category:social -category:updates"
         if after_epoch:
             q += f" after:{after_epoch}"
+        # Fetch more IDs than needed — thread deduplication reduces the count
+        fetch_limit = max(max_results * 3, 50)
         result = service.users().messages().list(
             userId="me",
             q=q,
-            maxResults=max_results,
+            maxResults=fetch_limit,
         ).execute()
 
         messages = result.get("messages", [])
@@ -56,15 +58,14 @@ def fetch_unread_emails(max_results: int = 20, after_epoch: int = None) -> list[
             if not thread_messages:
                 continue
 
-            # Last message in thread = most recent
+            # Last message in thread = most recent (what we reply to)
             detail = thread_messages[-1]
 
-            label_ids = set(detail.get("labelIds", []))
-            if label_ids & SKIP_LABELS:
-                continue
-
-            # Only process if the last message is unread (i.e. we haven't seen it)
-            if "UNREAD" not in label_ids:
+            # Only check skip labels on the last message (the one we'd reply to).
+            # Checking all messages would wrongly drop threads that contain
+            # a newsletter reply alongside a real conversation.
+            last_labels = set(detail.get("labelIds", []))
+            if last_labels & SKIP_LABELS:
                 continue
 
             parsed = _parse_message(detail)
