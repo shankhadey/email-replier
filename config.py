@@ -11,6 +11,7 @@ DEFAULTS = {
     "anthropic_model": "claude-sonnet-4-6",
     "low_confidence_threshold": 0.70,
     "user_timezone": "America/Chicago",
+    "read_past_unread": True,
 }
 
 def load_config() -> dict:

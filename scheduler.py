@@ -31,8 +31,11 @@ def _poll():
         logger.info(f"Outside poll window ({hour}:00). Skipping.")
         return
 
-    logger.info("Polling Gmail...")
-    emails = fetch_unread_emails(max_results=20, after_epoch=_service_start_epoch)
+    # Determine epoch filter based on config
+    read_past = config.get("read_past_unread", True)
+    epoch_filter = None if read_past else _service_start_epoch
+    logger.info(f"Polling Gmail... (read_past_unread={read_past})")
+    emails = fetch_unread_emails(max_results=20, after_epoch=epoch_filter)
     results = []
     for email in emails:
         result = process_email(email)
@@ -86,6 +89,11 @@ def run_now():
         _service_start_epoch = int(time.time())
     _poll()
     return _last_results
+
+
+def get_config_option(key: str):
+    from config import load_config
+    return load_config().get(key)
 
 
 def get_status() -> dict:
