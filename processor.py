@@ -56,8 +56,8 @@ def process_email(email: dict) -> dict:
     attachments: list[dict] = []
 
     if classification.get("needs_calendar"):
-        calendar_slots = get_free_slots()
-        logger.info(f"  Calendar slots fetched")
+        calendar_slots = get_free_slots(tz_name=config.get("user_timezone", "America/Chicago"))
+        logger.info(f"  Calendar slots: {repr(calendar_slots)}")
 
     if classification.get("needs_gdrive") and classification.get("gdrive_query"):
         query = classification["gdrive_query"]
@@ -74,6 +74,7 @@ def process_email(email: dict) -> dict:
         classification=classification,
         calendar_slots=calendar_slots,
         attachment_names=attachment_names if attachment_names else None,
+        thread_context=email.get("thread_context", ""),
     )
 
     if not draft_body:

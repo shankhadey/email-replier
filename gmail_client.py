@@ -18,35 +18,78 @@ logger = logging.getLogger(__name__)
 SKIP_LABELS = {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"}
 
 
-def fetch_unread_emails(max_results: int = 20) -> list[dict]:
-    """Fetch unread emails from inbox, excluding automated categories."""
+def fetch_unread_emails(max_results: int = 20, after_epoch: int = None) -> list[dict]:
+    """Fetch unread emails from inbox received after after_epoch (unix timestamp)."""
     service = get_gmail_service()
     try:
+        q = "is:unread in:inbox -category:promotions -category:social -category:updates"
+        if after_epoch:
+            q += f" after:{after_epoch}"
         result = service.users().messages().list(
             userId="me",
-            q="is:unread in:inbox -category:promotions -category:social -category:updates",
+            q=q,
             maxResults=max_results,
         ).execute()
 
         messages = result.get("messages", [])
         emails = []
+        seen_threads = set()
+
         for msg in messages:
-            detail = service.users().messages().get(
-                userId="me", id=msg["id"], format="full"
+            # Get thread_id first to deduplicate — multiple unread msgs in same thread
+            quick = service.users().messages().get(
+                userId="me", id=msg["id"], format="metadata",
+                metadataHeaders=["From", "Subject"]
             ).execute()
+
+            thread_id = quick.get("threadId")
+            if thread_id in seen_threads:
+                continue
+            seen_threads.add(thread_id)
+
+            # Fetch full thread and use the LAST message (most recent reply)
+            thread = service.users().threads().get(
+                userId="me", id=thread_id, format="full"
+            ).execute()
+
+            thread_messages = thread.get("messages", [])
+            if not thread_messages:
+                continue
+
+            # Last message in thread = most recent
+            detail = thread_messages[-1]
 
             label_ids = set(detail.get("labelIds", []))
             if label_ids & SKIP_LABELS:
                 continue
 
+            # Only process if the last message is unread (i.e. we haven't seen it)
+            if "UNREAD" not in label_ids:
+                continue
+
             parsed = _parse_message(detail)
             if parsed:
+                # Also pass thread context (previous messages) for better drafting
+                parsed["thread_context"] = _extract_thread_context(thread_messages[:-1])
                 emails.append(parsed)
 
         return emails
     except Exception as e:
         logger.error(f"Error fetching emails: {e}")
         return []
+
+
+def _extract_thread_context(prior_messages: list) -> str:
+    """Extract a short summary of prior messages in thread for drafting context."""
+    if not prior_messages:
+        return ""
+    lines = []
+    for msg in prior_messages[-3:]:  # last 3 prior messages max
+        headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
+        sender = headers.get("From", "unknown")
+        body = _extract_body(msg["payload"])[:500]
+        lines.append(f"[From: {sender}]\n{body.strip()}")
+    return "\n\n---\n\n".join(lines)
 
 
 def _parse_message(detail: dict) -> Optional[dict]:

@@ -3,6 +3,7 @@ Scheduler: polls Gmail every N minutes between configured hours.
 """
 
 import logging
+import time
 from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 _scheduler: BackgroundScheduler = None
 _last_run: datetime = None
 _last_results: list = []
+_service_start_epoch: int = None  # Only process emails received after this
 
 
 def _poll():
@@ -30,7 +32,7 @@ def _poll():
         return
 
     logger.info("Polling Gmail...")
-    emails = fetch_unread_emails(max_results=20)
+    emails = fetch_unread_emails(max_results=20, after_epoch=_service_start_epoch)
     results = []
     for email in emails:
         result = process_email(email)
@@ -43,7 +45,9 @@ def _poll():
 
 
 def start_scheduler():
-    global _scheduler
+    global _scheduler, _service_start_epoch
+    _service_start_epoch = int(time.time())
+    logger.info(f"Service start epoch: {_service_start_epoch} — only processing emails after this point.")
     config = load_config()
 
     _scheduler = BackgroundScheduler()
@@ -77,6 +81,9 @@ def reschedule(interval_minutes: int):
 
 def run_now():
     """Trigger an immediate poll (for manual refresh)."""
+    global _service_start_epoch
+    if not _service_start_epoch:
+        _service_start_epoch = int(time.time())
     _poll()
     return _last_results
 

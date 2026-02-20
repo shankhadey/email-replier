@@ -10,6 +10,7 @@ DEFAULTS = {
     "autonomy_level": 1,
     "anthropic_model": "claude-sonnet-4-6",
     "low_confidence_threshold": 0.70,
+    "user_timezone": "America/Chicago",
 }
 
 def load_config() -> dict:

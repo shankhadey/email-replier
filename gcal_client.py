@@ -12,13 +12,21 @@ from auth import get_calendar_service
 logger = logging.getLogger(__name__)
 
 
-def get_free_slots(days_ahead: int = 7, work_start: int = 8, work_end: int = 18) -> str:
+def get_free_slots(
+    days_ahead: int = 7,
+    work_start: int = 8,
+    work_end: int = 18,
+    tz_name: str = "America/Chicago",
+) -> str:
     """
     Returns a human-readable string of free slots for the next N days
     during working hours, formatted naturally for email insertion.
+    tz_name: IANA timezone for the user (default: America/Chicago for Shankha).
     """
+    import zoneinfo
     service = get_calendar_service()
-    now = datetime.now(timezone.utc)
+    user_tz = zoneinfo.ZoneInfo(tz_name)
+    now = datetime.now(user_tz)
     time_min = now.isoformat()
     time_max = (now + timedelta(days=days_ahead)).isoformat()
 
@@ -31,7 +39,9 @@ def get_free_slots(days_ahead: int = 7, work_start: int = 8, work_end: int = 18)
 
         busy_periods = result["calendars"]["primary"]["busy"]
         free_slots = _compute_free_slots(now, days_ahead, busy_periods, work_start, work_end)
-        return _format_free_slots(free_slots)
+        result_str = _format_free_slots(free_slots)
+        logger.info(f"Free slots computed: {repr(result_str)}")
+        return result_str
 
     except Exception as e:
         logger.error(f"Error fetching calendar: {e}")
@@ -47,7 +57,7 @@ def _compute_free_slots(
 ) -> list[dict]:
     """Compute free windows within working hours given busy periods."""
     free = []
-    local_now = now.astimezone()
+    local_now = now  # now is already in user_tz
 
     for day_offset in range(days_ahead):
         day = (local_now + timedelta(days=day_offset)).date()
@@ -67,7 +77,7 @@ def _compute_free_slots(
         for b in busy_periods:
             b_start = datetime.fromisoformat(b["start"].replace("Z", "+00:00")).astimezone(local_now.tzinfo)
             b_end = datetime.fromisoformat(b["end"].replace("Z", "+00:00")).astimezone(local_now.tzinfo)
-            if b_start.date() == day or b_end.date() == day:
+            if b_start.date() <= day <= b_end.date():
                 day_busy.append((b_start, b_end))
         day_busy.sort(key=lambda x: x[0])
 
