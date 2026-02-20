@@ -286,6 +286,7 @@ function renderSettingsForm() {
   document.getElementById('setting-start').value = config.poll_start_hour ?? 7;
   document.getElementById('setting-end').value = config.poll_end_hour ?? 20;
   document.getElementById('setting-threshold').value = config.low_confidence_threshold ?? 0.70;
+  document.getElementById('setting-read-past').checked = config.read_past_unread !== false;
 }
 
 async function saveSettings() {
@@ -294,6 +295,7 @@ async function saveSettings() {
     poll_start_hour:       parseInt(document.getElementById('setting-start').value),
     poll_end_hour:         parseInt(document.getElementById('setting-end').value),
     low_confidence_threshold: parseFloat(document.getElementById('setting-threshold').value),
+    read_past_unread: document.getElementById('setting-read-past').checked,
   };
 
   try {
