@@ -9,6 +9,9 @@ let allEmails = [];
 let config = {};
 let editMode = false;
 let pollHandle = null;
+let lastSeenEventId = 0;
+let newEventCount = 0;
+let activityCollapsed = localStorage.getItem('activityCollapsed') === 'true';
 
 // ── Init ─────────────────────────────────────────
 
@@ -16,8 +19,8 @@ async function init() {
   const authed = await checkAuth();
   if (!authed) return;
   await loadConfig();
-  await loadQueue();
-  await loadSchedulerStatus();
+  await Promise.all([loadQueue(), loadSchedulerStatus(), loadEvents()]);
+  applyActivityCollapsed();
   startPolling();
 
   document.getElementById('btn-run-now').addEventListener('click', runNow);
@@ -286,7 +289,7 @@ function renderSettingsForm() {
   document.getElementById('setting-start').value = config.poll_start_hour ?? 7;
   document.getElementById('setting-end').value = config.poll_end_hour ?? 20;
   document.getElementById('setting-threshold').value = config.low_confidence_threshold ?? 0.70;
-  document.getElementById('setting-read-past').checked = config.read_past_unread !== false;
+  document.getElementById('setting-lookback').value = config.lookback_hours ?? 72;
 }
 
 async function saveSettings() {
@@ -295,7 +298,7 @@ async function saveSettings() {
     poll_start_hour:       parseInt(document.getElementById('setting-start').value),
     poll_end_hour:         parseInt(document.getElementById('setting-end').value),
     low_confidence_threshold: parseFloat(document.getElementById('setting-threshold').value),
-    read_past_unread: document.getElementById('setting-read-past').checked,
+    lookback_hours: parseInt(document.getElementById('setting-lookback').value),
   };
 
   try {
@@ -353,12 +356,112 @@ async function runNow() {
   }
 }
 
+// ── Activity Log ─────────────────────────────────
+
+const EVENT_META = {
+  poll_start:      { glyph: '⟳', color: 'var(--text-dimmer)' },
+  poll_end:        { glyph: '✓', color: 'var(--green)' },
+  classified:      { glyph: '◆', color: 'var(--accent)' },
+  drive_fetched:   { glyph: '⊕', color: 'var(--accent)' },
+  calendar_checked:{ glyph: '◷', color: 'var(--accent)' },
+  drafted:         { glyph: '✦', color: 'var(--yellow)' },
+  sent:            { glyph: '↗', color: 'var(--green)' },
+  queued:          { glyph: '◈', color: 'var(--yellow)' },
+  skipped:         { glyph: '—', color: 'var(--text-dimmer)' },
+  user_sent:       { glyph: '↗', color: 'var(--green)' },
+  user_drafted:    { glyph: '◑', color: 'var(--yellow)' },
+  user_discarded:  { glyph: '✕', color: 'var(--text-dimmer)' },
+  error:           { glyph: '✕', color: 'var(--red)' },
+};
+
+async function loadEvents() {
+  try {
+    const res = await fetch(`${API}/api/events?limit=30`);
+    const events = await res.json();
+    if (!events.length) return;
+
+    const maxId = events[0].id; // newest first
+    const isFirst = lastSeenEventId === 0;
+
+    if (!isFirst && maxId > lastSeenEventId) {
+      const incoming = events.filter(e => e.id > lastSeenEventId);
+      if (activityCollapsed) {
+        newEventCount += incoming.length;
+        updateNewBadge();
+      }
+    }
+
+    if (!isFirst) {
+      renderEvents(events, maxId > lastSeenEventId ? events.filter(e => e.id > lastSeenEventId).map(e => e.id) : []);
+    } else {
+      renderEvents(events, []);
+    }
+
+    lastSeenEventId = maxId;
+  } catch (e) {
+    // silent — activity log is non-critical
+  }
+}
+
+function renderEvents(events, newIds) {
+  const container = document.getElementById('activity-entries');
+  if (!events.length) {
+    container.innerHTML = '<div class="activity-empty">// no activity yet</div>';
+    return;
+  }
+
+  container.innerHTML = events.map(ev => {
+    const meta = EVENT_META[ev.event_type] || { glyph: '·', color: 'var(--text-dimmer)' };
+    const isNew = newIds.includes(ev.id);
+    return `
+      <div class="activity-entry${isNew ? ' new' : ''}">
+        <span class="activity-time">${formatTime(ev.created_at)}</span>
+        <span class="activity-glyph" style="color:${meta.color}">${meta.glyph}</span>
+        <span class="activity-message">${esc(ev.message)}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateNewBadge() {
+  const badge = document.getElementById('activity-new-badge');
+  if (newEventCount > 0) {
+    badge.textContent = `+${newEventCount}`;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+function toggleActivityLog() {
+  activityCollapsed = !activityCollapsed;
+  localStorage.setItem('activityCollapsed', activityCollapsed);
+  applyActivityCollapsed();
+  if (!activityCollapsed) {
+    newEventCount = 0;
+    updateNewBadge();
+  }
+}
+
+function applyActivityCollapsed() {
+  const entries = document.getElementById('activity-entries');
+  const btn = document.getElementById('btn-activity-toggle');
+  if (activityCollapsed) {
+    entries.classList.add('hidden');
+    btn.textContent = 'SHOW';
+  } else {
+    entries.classList.remove('hidden');
+    btn.textContent = 'HIDE';
+  }
+}
+
 // ── Auto Refresh ─────────────────────────────────
 
 function startPolling() {
   pollHandle = setInterval(async () => {
     await loadQueue();
     await loadSchedulerStatus();
+    await loadEvents();
   }, 15000); // refresh UI every 15s
 }
 

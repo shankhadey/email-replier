@@ -14,7 +14,7 @@ from typing import Optional
 from classifier import classify_email
 from drafter import draft_reply
 from autonomy_engine import route
-from database import is_processed, mark_processed, add_to_review_queue
+from database import is_processed, mark_processed, add_to_review_queue, log_event
 from gmail_client import send_reply, create_reply_draft, mark_as_read
 from gcal_client import get_free_slots
 from gdrive_client import search_and_attach, get_attachment_names
@@ -45,8 +45,17 @@ def process_email(email: dict) -> dict:
     )
     logger.info(f"  Classification: {classification}")
 
+    priority = classification.get("sender_priority", "unknown")
+    confidence_pct = round(classification.get("confidence", 0) * 100)
+    log_event(
+        "classified",
+        f"'{email['subject']}' from {_sender_name(email['sender'])} "
+        f"— {priority} priority, {confidence_pct}% confidence",
+    )
+
     # Step 2: Skip if no reply needed
     if not classification.get("needs_reply"):
+        log_event("skipped", f"'{email['subject']}' — no reply needed")
         mark_processed(message_id, email["thread_id"])
         return {"message_id": message_id, "action": "skipped", "reason": "no reply needed"}
 
@@ -56,14 +65,21 @@ def process_email(email: dict) -> dict:
     attachments: list[dict] = []
 
     if classification.get("needs_calendar"):
-        calendar_slots = get_free_slots(tz_name=config.get("user_timezone", "America/Chicago"))
-        logger.info(f"  Calendar slots: {repr(calendar_slots)}")
+        days = int(classification.get("calendar_days_requested") or 7)
+        days = max(1, min(days, 60))
+        calendar_slots = get_free_slots(days_ahead=days, tz_name=config.get("user_timezone", "America/Chicago"))
+        logger.info(f"  Calendar slots ({days}d): {repr(calendar_slots)}")
+        log_event("calendar_checked", f"Checked calendar availability ({days}d window)")
 
     if classification.get("needs_gdrive") and classification.get("gdrive_query"):
         query = classification["gdrive_query"]
         attachments = search_and_attach(query)
         attachment_names = [a["filename"] for a in attachments]
         logger.info(f"  Drive attachments: {attachment_names}")
+        if attachment_names:
+            log_event("drive_fetched", f"Fetched '{attachment_names[0]}' from Drive")
+        else:
+            log_event("drive_fetched", f"Drive search for '{query}' — no files found")
 
     # Step 4: Draft reply
     has_attachments_to_send = len(attachments) > 0
@@ -111,8 +127,11 @@ def process_email(email: dict) -> dict:
         if not success:
             action_taken = "review"
             decision = type(decision)(action="review", reason="Send failed, queued for review")
+        else:
+            log_event("sent", f"Auto-sent to {sender_email} — '{reply_subject}'")
 
     if action_taken in ("review",):
+        log_event("queued", f"Queued for review: '{email['subject']}' — {decision.reason}")
         # Add to review queue (this also covers cases where send failed)
         add_to_review_queue(
             message_id=message_id,
@@ -147,3 +166,10 @@ def _extract_email(sender: str) -> str:
     import re
     match = re.search(r"<([^>]+)>", sender)
     return match.group(1) if match else sender
+
+
+def _sender_name(sender: str) -> str:
+    """Extract display name from 'Name <email>' format, fall back to email."""
+    import re
+    match = re.match(r"^([^<]+)<", sender)
+    return match.group(1).strip() if match else sender.split("@")[0]

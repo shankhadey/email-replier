@@ -95,6 +95,18 @@
       </div>
     </div>
 
+    <!-- Activity Log -->
+    <div id="activity-log" class="activity-log">
+      <div class="activity-log-header">
+        <span class="activity-log-title">ACTIVITY</span>
+        <span id="activity-new-badge" class="activity-new-badge hidden"></span>
+        <button class="btn-micro" id="btn-activity-toggle" onclick="toggleActivityLog()">HIDE</button>
+      </div>
+      <div id="activity-entries" class="activity-entries">
+        <div class="activity-empty">// no activity yet</div>
+      </div>
+    </div>
+
     <!-- Filter Tabs -->
     <div class="filter-tabs">
       <button class="tab active" data-filter="pending" onclick="setFilter('pending')">Pending</button>
@@ -184,13 +196,10 @@
         </div>
         <div class="setting-row">
           <label>
-            Read past unread emails
-            <span class="setting-hint">If on, processes all unread emails in inbox. If off, only emails received after service starts.</span>
+            Lookback window (hours)
+            <span class="setting-hint">Only process unread emails from the past N hours. Set to 0 for no limit.</span>
           </label>
-          <label class="toggle-switch">
-            <input type="checkbox" id="setting-read-past" />
-            <span class="toggle-slider"></span>
-          </label>
+          <input type="number" id="setting-lookback" min="0" max="720" />
         </div>
       </div>
       <div class="modal-footer">

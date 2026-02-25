@@ -23,6 +23,7 @@ Return ONLY valid JSON matching this schema (no markdown, no explanation):
   "confidence": 0.0 - 1.0,
   "is_critical": true | false,
   "needs_calendar": true | false,
+  "calendar_days_requested": integer or null,
   "needs_gdrive": true | false,
   "gdrive_query": "string or null",
   "reasoning": "one sentence"
@@ -34,6 +35,7 @@ Definitions:
 - confidence: How confident are you in your classification (0 = very unsure, 1 = certain)?
 - is_critical: Time-sensitive, financial, legal, job offer, urgent decision required?
 - needs_calendar: Does the email ask for Shankha's availability or to schedule a meeting?
+- calendar_days_requested: If needs_calendar=true, how many days ahead is the email asking about? ("tomorrow"→2, "this week"→7, "next two weeks"→14, "this month"→30). Default 7 if unspecified. Otherwise null.
 - needs_gdrive: Does the email ask for a document (resume, proposal, report, etc)?
 - gdrive_query: If needs_gdrive=true, what search query to use in Drive (e.g. "resume", "Q3 proposal")? Otherwise null.
 - reasoning: Brief reason for your classification.

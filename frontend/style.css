@@ -218,6 +218,100 @@ header {
   color: var(--text-dimmer);
 }
 
+/* ── Activity Log ───────────────────────────── */
+.activity-log {
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-log-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-log-title {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-dimmer);
+  flex: 1;
+}
+
+.activity-new-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+.activity-entries {
+  max-height: 152px;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.activity-empty {
+  padding: 10px 20px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dimmer);
+}
+
+.activity-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 20px;
+  transition: background 0.15s;
+}
+
+.activity-entry:hover {
+  background: var(--bg-2);
+}
+
+@keyframes entry-flash {
+  0%   { background: var(--accent-dim); }
+  100% { background: transparent; }
+}
+
+.activity-entry.new {
+  animation: entry-flash 1.4s ease-out forwards;
+}
+
+.activity-time {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-dimmer);
+  width: 34px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.activity-glyph {
+  font-family: var(--mono);
+  font-size: 11px;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.activity-message {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
 /* ── Filter Tabs ────────────────────────────── */
 .filter-tabs {
   display: flex;

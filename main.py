@@ -6,18 +6,20 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from database import (
     init_db, get_pending_queue, get_all_queue, get_queue_item,
     update_queue_item, update_draft_reply, mark_processed,
+    get_recent_events, log_event,
 )
 from gmail_client import send_reply, create_reply_draft
+from gdrive_client import search_and_attach
 from config import load_config, save_config
 from scheduler import start_scheduler, stop_scheduler, run_now, get_status, reschedule
 from auth import build_web_flow, save_token_from_flow, is_authorized
@@ -130,11 +132,12 @@ def get_config():
 
 
 class ConfigUpdate(BaseModel):
-    poll_interval_minutes: Optional[int] = None
-    poll_start_hour: Optional[int] = None
-    poll_end_hour: Optional[int] = None
-    autonomy_level: Optional[int] = None
-    low_confidence_threshold: Optional[float] = None
+    poll_interval_minutes: Optional[int] = Field(None, ge=1, le=1440)
+    poll_start_hour: Optional[int] = Field(None, ge=0, le=23)
+    poll_end_hour: Optional[int] = Field(None, ge=0, le=23)
+    autonomy_level: Optional[int] = Field(None, ge=1, le=3)
+    low_confidence_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    lookback_hours: Optional[int] = Field(None, ge=0)
 
 
 @app.patch("/api/config")
@@ -190,34 +193,43 @@ def take_action(item_id: int, body: ApproveAction):
     if item["status"] != "pending":
         raise HTTPException(400, f"Item already actioned: {item['status']}")
 
+    sender_email = _extract_email(item["sender"])
+    subject = item["subject"]
+    reply_subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+
+    # Re-fetch Drive attachment if needed (binary data is not persisted to DB)
+    attachments = []
+    cls = item.get("classification") or {}
+    if cls.get("needs_gdrive") and cls.get("gdrive_query"):
+        attachments = search_and_attach(cls["gdrive_query"])
+
     if body.action == "send":
-        sender_email = _extract_email(item["sender"])
-        subject = item["subject"]
-        reply_subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
         success = send_reply(
             thread_id=item["thread_id"],
             to=sender_email,
             subject=reply_subject,
             body=item["draft_reply"],
+            attachments=attachments or None,
         )
         if not success:
             raise HTTPException(500, "Failed to send email")
         update_queue_item(item_id, "sent", "sent by user")
+        log_event("user_sent", f"Sent: '{subject}' → {sender_email}")
 
     elif body.action == "draft":
-        sender_email = _extract_email(item["sender"])
-        subject = item["subject"]
-        reply_subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
         create_reply_draft(
             thread_id=item["thread_id"],
             to=sender_email,
             subject=reply_subject,
             body=item["draft_reply"],
+            attachments=attachments or None,
         )
         update_queue_item(item_id, "drafted", "saved as Gmail draft")
+        log_event("user_drafted", f"Saved to drafts: '{subject}'")
 
     elif body.action == "discard":
         update_queue_item(item_id, "discarded", "discarded by user")
+        log_event("user_discarded", f"Discarded: '{subject}'")
 
     else:
         raise HTTPException(400, f"Unknown action: {body.action}")
@@ -236,6 +248,13 @@ def scheduler_status():
 def trigger_poll():
     results = run_now()
     return {"processed": len(results), "results": results}
+
+
+# ── Events ────────────────────────────────────────────────────────────────────
+
+@app.get("/api/events")
+def get_events(limit: int = Query(50, ge=1, le=200)):
+    return get_recent_events(limit)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
