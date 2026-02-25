@@ -43,6 +43,14 @@ def init_db():
                 updated_at  TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT,
+                message    TEXT,
+                created_at TEXT
+            )
+        """)
         conn.commit()
 
 
@@ -130,6 +138,29 @@ def get_queue_item(item_id: int) -> Optional[dict]:
             "SELECT * FROM review_queue WHERE id=?", (item_id,)
         ).fetchone()
     return _row_to_dict(row) if row else None
+
+
+def log_event(event_type: str, message: str):
+    now = datetime.utcnow().isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO activity_log (event_type, message, created_at) VALUES (?,?,?)",
+            (event_type, message, now),
+        )
+        # Keep only the 200 most recent events
+        conn.execute("""
+            DELETE FROM activity_log
+            WHERE id NOT IN (SELECT id FROM activity_log ORDER BY id DESC LIMIT 200)
+        """)
+        conn.commit()
+
+
+def get_recent_events(limit: int = 50) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM activity_log ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def _row_to_dict(row) -> dict:
