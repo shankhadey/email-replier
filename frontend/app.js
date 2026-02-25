@@ -348,6 +348,7 @@ async function runNow() {
     toast(`Processed ${data.processed} email(s)`, 'success');
     await loadQueue();
     await loadSchedulerStatus();
+    await loadEvents();
   } catch (e) {
     toast('Poll failed', 'error');
   } finally {

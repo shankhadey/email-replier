@@ -22,13 +22,13 @@ _last_results: list = []
 _service_start_epoch: int = None  # Only process emails received after this
 
 
-def _poll():
+def _poll(force: bool = False):
     global _last_run, _last_results
     config = load_config()
     now = datetime.now()
     hour = now.hour
 
-    if not (config["poll_start_hour"] <= hour <= config["poll_end_hour"]):
+    if not force and not (config["poll_start_hour"] <= hour <= config["poll_end_hour"]):
         logger.info(f"Outside poll window ({hour}:00). Skipping.")
         return
 
@@ -99,11 +99,11 @@ def reschedule(interval_minutes: int):
 
 
 def run_now():
-    """Trigger an immediate poll (for manual refresh)."""
+    """Trigger an immediate poll (for manual refresh), bypassing the time window."""
     global _service_start_epoch
     if not _service_start_epoch:
         _service_start_epoch = int(time.time())
-    _poll()
+    _poll(force=True)
     return _last_results
 
 
