@@ -32,19 +32,28 @@ def search_and_attach(query: str) -> list[dict]:
     """
     Search Drive for files matching the query, return the best match(es)
     as attachment dicts: {filename, data (bytes), mime_type}.
+    Tries name-based search first (more precise), falls back to full-text search.
     Returns empty list on failure or no results.
     """
     service = get_drive_service()
+    safe_q = _sanitize(query)
     try:
-        results = service.files().list(
-            q=f"fullText contains '{_sanitize(query)}' and trashed=false",
-            spaces="drive",
-            fields="files(id, name, mimeType, modifiedTime)",
-            orderBy="modifiedTime desc",
-            pageSize=3,
-        ).execute()
+        files = []
+        for q in [
+            f"name contains '{safe_q}' and trashed=false",
+            f"fullText contains '{safe_q}' and trashed=false",
+        ]:
+            results = service.files().list(
+                q=q,
+                spaces="drive",
+                fields="files(id, name, mimeType, modifiedTime)",
+                orderBy="modifiedTime desc",
+                pageSize=3,
+            ).execute()
+            files = results.get("files", [])
+            if files:
+                break  # found by name — don't fall through to content search
 
-        files = results.get("files", [])
         if not files:
             logger.info(f"No Drive files found for query: {query}")
             return []
@@ -96,16 +105,25 @@ def _sanitize(query: str) -> str:
 def get_attachment_names(query: str) -> list[str]:
     """
     Quick search to get just filenames (for drafter context without downloading).
+    Tries name-based search first, falls back to full-text search.
     """
     service = get_drive_service()
+    safe_q = _sanitize(query)
     try:
-        results = service.files().list(
-            q=f"fullText contains '{_sanitize(query)}' and trashed=false",
-            spaces="drive",
-            fields="files(id, name, mimeType)",
-            orderBy="modifiedTime desc",
-            pageSize=3,
-        ).execute()
-        return [f["name"] for f in results.get("files", [])][:1]
+        for q in [
+            f"name contains '{safe_q}' and trashed=false",
+            f"fullText contains '{safe_q}' and trashed=false",
+        ]:
+            results = service.files().list(
+                q=q,
+                spaces="drive",
+                fields="files(id, name, mimeType)",
+                orderBy="modifiedTime desc",
+                pageSize=3,
+            ).execute()
+            files = results.get("files", [])
+            if files:
+                return [f["name"] for f in files][:1]
+        return []
     except Exception:
         return []

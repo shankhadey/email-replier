@@ -447,6 +447,7 @@ function toggleActivityLog() {
 function applyActivityCollapsed() {
   const entries = document.getElementById('activity-entries');
   const btn = document.getElementById('btn-activity-toggle');
+  document.getElementById('activity-log').classList.toggle('collapsed', activityCollapsed);
   if (activityCollapsed) {
     entries.classList.add('hidden');
     btn.textContent = 'SHOW';

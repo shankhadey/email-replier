@@ -5,8 +5,8 @@ CONFIG_FILE = Path("config.json")
 
 DEFAULTS = {
     "poll_interval_minutes": 30,
-    "poll_start_hour": 7,
-    "poll_end_hour": 20,
+    "poll_start_hour": 0,
+    "poll_end_hour": 23,
     "autonomy_level": 1,
     "anthropic_model": "claude-sonnet-4-6",
     "low_confidence_threshold": 0.70,
