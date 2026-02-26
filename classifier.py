@@ -12,6 +12,7 @@ from typing import Optional
 
 import anthropic
 from config import load_config
+from params import load_params
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +42,47 @@ Definitions:
 - reasoning: Brief reason for your classification.
 """
 
-SYSTEM_PROMPT = f"""You are an email classifier for Shankha Dey, a Senior Director of Product Management specializing in AI/ML. 
+def _build_classifier_prompt(params: dict) -> str:
+    """Build the classifier system prompt from behavior_params.json."""
+    identity = params.get("user_identity", {})
+    rules    = params.get("classification_rules", {})
+
+    name    = identity.get("name", "the user")
+    role    = identity.get("role", "")
+    company = identity.get("company", "")
+    focus   = identity.get("focus", "")
+    context = "\n".join(f"- {c}" for c in identity.get("context", []))
+
+    priority = "\n".join(
+        f'  "{k}": {v}' for k, v in rules.get("sender_priority", {}).items()
+    )
+    critical = "\n".join(f"- {c}" for c in rules.get("is_critical_criteria", []))
+    cal_trig = "\n".join(f"- {t}" for t in rules.get("needs_calendar_triggers", []))
+    drv_trig = "\n".join(f"- {t}" for t in rules.get("needs_gdrive_triggers", []))
+    skip     = "\n".join(f"- {t}" for t in rules.get("skip_triggers", []))
+
+    return f"""You are an email classifier for {name}, {role} at {company} ({focus}).
 Your job is to analyze incoming emails and classify them accurately.
 
-Context about Shankha:
-- Works at Salesforce Data Cloud on AI/ML initiatives
-- Actively interviewing for VP-level PM roles
-- Has a spouse named Priya (real estate agent)
-- Receives recruiter emails, executive communications, technical collaboration requests
+Context about {name}:
+{context}
 
-{CLASSIFICATION_SCHEMA}
-"""
+sender_priority definitions:
+{priority}
+
+is_critical = true when any of:
+{critical}
+
+needs_calendar = true when:
+{cal_trig}
+
+needs_gdrive = true when:
+{drv_trig}
+
+needs_reply = false (skip without replying) when:
+{skip}
+
+{CLASSIFICATION_SCHEMA}"""
 
 
 def classify_email(
@@ -62,6 +93,7 @@ def classify_email(
 ) -> dict:
     """Classify an email and return structured classification."""
     config = load_config()
+    system_prompt = _build_classifier_prompt(load_params())
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
     user_prompt = f"""Classify this email:
@@ -81,7 +113,7 @@ Body:
             response = client.messages.create(
                 model=config["anthropic_model"],
                 max_tokens=512,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],
             )
 
