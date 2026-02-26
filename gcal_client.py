@@ -31,13 +31,21 @@ def get_free_slots(
     time_max = (now + timedelta(days=days_ahead)).isoformat()
 
     try:
+        # Discover all calendars the user has connected (primary + any linked accounts)
+        cal_list = service.calendarList().list().execute()
+        calendar_ids = [c["id"] for c in cal_list.get("items", [])] or ["primary"]
+
         result = service.freebusy().query(body={
             "timeMin": time_min,
             "timeMax": time_max,
-            "items": [{"id": "primary"}],
+            "items": [{"id": cid} for cid in calendar_ids],
         }).execute()
 
-        busy_periods = result["calendars"]["primary"]["busy"]
+        # Merge busy blocks from every calendar so none are missed
+        busy_periods = []
+        for cid in calendar_ids:
+            busy_periods.extend(result["calendars"].get(cid, {}).get("busy", []))
+
         free_slots = _compute_free_slots(now, days_ahead, busy_periods, work_start, work_end)
         result_str = _format_free_slots(free_slots)
         logger.info(f"Free slots computed: {repr(result_str)}")
