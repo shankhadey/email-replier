@@ -281,11 +281,12 @@ function closeSettings(event) {
 }
 
 function renderSettingsForm() {
-  document.getElementById('setting-interval').value = config.poll_interval_minutes || 30;
-  document.getElementById('setting-start').value = config.poll_start_hour ?? 7;
-  document.getElementById('setting-end').value = config.poll_end_hour ?? 20;
-  document.getElementById('setting-threshold').value = config.low_confidence_threshold ?? 0.70;
-  document.getElementById('setting-lookback').value = config.lookback_hours ?? 72;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  set('setting-interval',  config.poll_interval_minutes    || 30);
+  set('setting-start',     config.poll_start_hour          ?? 0);
+  set('setting-end',       config.poll_end_hour            ?? 23);
+  set('setting-threshold', config.low_confidence_threshold ?? 0.70);
+  set('setting-lookback',  config.lookback_hours           ?? 72);
 }
 
 async function saveSettings() {
