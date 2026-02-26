@@ -221,9 +221,9 @@ header {
 
 /* ── Activity Log ───────────────────────────── */
 .activity-log {
-  background: rgba(91,141,238,0.04);
-  border-left: 2px solid rgba(91,141,238,0.28);
-  border-bottom: 1px solid rgba(91,141,238,0.1);
+  background: rgba(91,141,238,0.08);
+  border-left: 3px solid rgba(91,141,238,0.5);
+  border-bottom: 1px solid rgba(91,141,238,0.18);
 }
 
 .activity-log-header {
@@ -231,8 +231,8 @@ header {
   align-items: center;
   gap: 8px;
   padding: 7px 16px 7px 14px;
-  background: rgba(91,141,238,0.07);
-  border-bottom: 1px solid rgba(91,141,238,0.15);
+  background: rgba(91,141,238,0.13);
+  border-bottom: 1px solid rgba(91,141,238,0.25);
 }
 
 .activity-log.collapsed .activity-log-header {
@@ -243,18 +243,18 @@ header {
   font-family: var(--mono);
   font-size: 9px;
   letter-spacing: 0.12em;
-  color: rgba(91,141,238,0.55);
+  color: rgba(91,141,238,0.75);
   flex: 1;
 }
 
 .activity-log-header .btn-micro {
-  border-color: rgba(91,141,238,0.2);
-  color: rgba(91,141,238,0.45);
+  border-color: rgba(91,141,238,0.35);
+  color: rgba(91,141,238,0.65);
 }
 
 .activity-log-header .btn-micro:hover {
-  border-color: rgba(91,141,238,0.45);
-  color: rgba(91,141,238,0.75);
+  border-color: rgba(91,141,238,0.6);
+  color: rgba(91,141,238,0.9);
 }
 
 .activity-new-badge {
@@ -278,7 +278,7 @@ header {
   padding: 10px 14px;
   font-family: var(--mono);
   font-size: 10px;
-  color: rgba(91,141,238,0.35);
+  color: rgba(91,141,238,0.5);
   font-style: italic;
 }
 
@@ -291,11 +291,11 @@ header {
 }
 
 .activity-entry:hover {
-  background: rgba(91,141,238,0.08);
+  background: rgba(91,141,238,0.12);
 }
 
 @keyframes entry-flash {
-  0%   { background: rgba(91,141,238,0.14); }
+  0%   { background: rgba(91,141,238,0.22); }
   100% { background: transparent; }
 }
 
@@ -306,7 +306,7 @@ header {
 .activity-time {
   font-family: var(--mono);
   font-size: 9px;
-  color: rgba(91,141,238,0.35);
+  color: rgba(91,141,238,0.5);
   width: 34px;
   flex-shrink: 0;
   text-align: right;
@@ -323,7 +323,7 @@ header {
 
 .activity-message {
   font-size: 11px;
-  color: rgba(228,228,232,0.65);
+  color: rgba(228,228,232,0.82);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
