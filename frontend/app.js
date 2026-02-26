@@ -20,11 +20,7 @@ async function init() {
   if (!authed) return;
   await loadConfig();
   await Promise.all([loadQueue(), loadSchedulerStatus(), loadEvents()]);
-  applyActivityCollapsed();
   startPolling();
-
-  document.getElementById('btn-run-now').addEventListener('click', runNow);
-  document.getElementById('btn-settings').addEventListener('click', openSettings);
 }
 
 // ── Config ───────────────────────────────────────
@@ -445,16 +441,12 @@ function toggleActivityLog() {
 }
 
 function applyActivityCollapsed() {
+  const log     = document.getElementById('activity-log');
   const entries = document.getElementById('activity-entries');
-  const btn = document.getElementById('btn-activity-toggle');
-  document.getElementById('activity-log').classList.toggle('collapsed', activityCollapsed);
-  if (activityCollapsed) {
-    entries.classList.add('hidden');
-    btn.textContent = 'SHOW';
-  } else {
-    entries.classList.remove('hidden');
-    btn.textContent = 'HIDE';
-  }
+  const btn     = document.getElementById('btn-activity-toggle');
+  if (log)     log.classList.toggle('collapsed', activityCollapsed);
+  if (entries) entries.classList.toggle('hidden', activityCollapsed);
+  if (btn)     btn.textContent = activityCollapsed ? 'SHOW' : 'HIDE';
 }
 
 // ── Auto Refresh ─────────────────────────────────
@@ -515,7 +507,13 @@ document.addEventListener('keydown', (e) => {
 
 // ── Start ─────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  // Wire up buttons synchronously — never blocked by async failures in init()
+  document.getElementById('btn-run-now').addEventListener('click', runNow);
+  document.getElementById('btn-settings').addEventListener('click', openSettings);
+  applyActivityCollapsed();
+  init();
+});
 
 // ── Auth Check ───────────────────────────────────
 
