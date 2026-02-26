@@ -1,0 +1,296 @@
+{
+  "_comment": "Evaluation test cases for Inbox Pilot. Each case defines an input email and the expected classifier + routing outputs. Run these to verify model behavior after prompt or parameter changes.",
+  "version": "1.0",
+
+  "test_cases": [
+
+    {
+      "id": "eval_001",
+      "scenario": "Recruiter outreach — resume request",
+      "input": {
+        "sender": "Sarah Lin <sarah.lin@recruiting.com>",
+        "subject": "VP of Product opportunity at Series B AI startup",
+        "body": "Hi Shankha, I came across your profile and think you'd be a great fit for a VP of Product role at a Series B AI startup. Would you be open to a quick call? Also, could you send over your resume so I can share with the team?",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "high",
+        "confidence_min": 0.80,
+        "is_critical": false,
+        "needs_calendar": false,
+        "needs_gdrive": true,
+        "gdrive_query_contains": "resume"
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "review",
+        "autonomy_3": "review",
+        "reason": "has_attachments_to_send hard override — always review when sending a Drive file"
+      },
+      "draft_quality": {
+        "must_include": ["resume"],
+        "must_not_include": ["I hope this email finds you well", "Please find attached"],
+        "tone": "professional but warm",
+        "max_sentences": 4
+      }
+    },
+
+    {
+      "id": "eval_002",
+      "scenario": "Meeting scheduling request — known contact",
+      "input": {
+        "sender": "Alex Mercer <alex.mercer@salesforce.com>",
+        "subject": "Sync this week?",
+        "body": "Hey Shankha, can we find 30 minutes to sync on the Data Cloud roadmap this week? Let me know what works for you.",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "high",
+        "confidence_min": 0.80,
+        "is_critical": false,
+        "needs_calendar": true,
+        "calendar_days_requested": 7,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "send",
+        "autonomy_3": "send"
+      },
+      "draft_quality": {
+        "must_include_calendar_slots": true,
+        "tone": "casual, direct",
+        "must_not_include": ["I hope", "Please let me know your thoughts"],
+        "format": "dates listed as M/D: Xam-Xpm"
+      }
+    },
+
+    {
+      "id": "eval_003",
+      "scenario": "Promotional newsletter — skip",
+      "input": {
+        "sender": "Product Hunt <noreply@producthunt.com>",
+        "subject": "Today's top products",
+        "body": "Here are the top 5 products launched today on Product Hunt...",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": false,
+        "sender_priority": "low",
+        "is_critical": false,
+        "needs_calendar": false,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "skip",
+        "autonomy_2": "skip",
+        "autonomy_3": "skip"
+      },
+      "draft_quality": null
+    },
+
+    {
+      "id": "eval_004",
+      "scenario": "Unknown sender cold outreach",
+      "input": {
+        "sender": "John Doe <john.doe@unknowncorp.com>",
+        "subject": "Partnership opportunity",
+        "body": "Hi, I'm reaching out about a potential partnership between our companies. Would love to connect.",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "unknown",
+        "is_critical": false,
+        "needs_calendar": false,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "review",
+        "autonomy_3": "review",
+        "reason": "unknown sender hard override — always review regardless of autonomy level"
+      },
+      "draft_quality": {
+        "tone": "professional, non-committal",
+        "must_not_include": ["Sure", "Sounds great"],
+        "max_sentences": 3
+      }
+    },
+
+    {
+      "id": "eval_005",
+      "scenario": "Job offer — critical, needs human decision",
+      "input": {
+        "sender": "Jennifer Wu <jwu@bigtech.com>",
+        "subject": "Formal offer — VP Product, BigTech",
+        "body": "Shankha, we're excited to extend a formal offer for the VP of Product role. Offer letter attached. Please respond by Friday.",
+        "has_attachments": true
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "high",
+        "is_critical": true,
+        "needs_calendar": false,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "review",
+        "autonomy_3": "review",
+        "reason": "is_critical=true triggers review at L2; L3 would also review due to is_critical override"
+      },
+      "draft_quality": {
+        "tone": "professional, enthusiastic but measured",
+        "must_not_include": ["I will sign", "I accept"],
+        "note": "Draft should acknowledge receipt and buy time if needed"
+      }
+    },
+
+    {
+      "id": "eval_006",
+      "scenario": "Availability request — multi-week window",
+      "input": {
+        "sender": "Maria Chen <m.chen@vc.com>",
+        "subject": "Intro call — next two weeks",
+        "body": "Hi Shankha, would love to connect about an opportunity. Are you free for a 30-min call in the next two weeks?",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "high",
+        "needs_calendar": true,
+        "calendar_days_requested": 14,
+        "needs_gdrive": false,
+        "is_critical": false
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "send",
+        "autonomy_3": "send"
+      },
+      "draft_quality": {
+        "must_include_calendar_slots": true,
+        "calendar_window_days": 14,
+        "format": "dates listed as M/D: Xam-Xpm"
+      }
+    },
+
+    {
+      "id": "eval_007",
+      "scenario": "Low-confidence ambiguous email",
+      "input": {
+        "sender": "noreply@platform.io",
+        "subject": "Your account",
+        "body": "There's an update to your account. Please review.",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": false,
+        "confidence_max": 0.65,
+        "is_critical": false
+      },
+      "expected_routing": {
+        "autonomy_1": "skip",
+        "autonomy_2": "skip",
+        "autonomy_3": "skip",
+        "reason": "needs_reply=false means skip regardless of confidence or level"
+      },
+      "draft_quality": null
+    },
+
+    {
+      "id": "eval_008",
+      "scenario": "Executive follow-up — casual known contact",
+      "input": {
+        "sender": "David Park <dpark@salesforce.com>",
+        "subject": "Re: AI roadmap",
+        "body": "Hey, just following up on our convo from last week. Any updates on the roadmap timeline?",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "high",
+        "confidence_min": 0.85,
+        "is_critical": false,
+        "needs_calendar": false,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "send",
+        "autonomy_3": "send"
+      },
+      "draft_quality": {
+        "tone": "casual, direct",
+        "examples_of_acceptable_openers": ["Hey", "Yeah", "Still working on it"],
+        "must_not_include": ["Dear David", "I hope you are well"],
+        "max_sentences": 3
+      }
+    },
+
+    {
+      "id": "eval_009",
+      "scenario": "Resume + availability combined request",
+      "input": {
+        "sender": "Tom Riley <t.riley@headhunters.com>",
+        "subject": "CTO role — need resume and availability",
+        "body": "Hi Shankha, we have an exciting CTO opportunity. Could you send your resume and let me know when you're free for a call this week?",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "high",
+        "is_critical": false,
+        "needs_calendar": true,
+        "calendar_days_requested": 7,
+        "needs_gdrive": true,
+        "gdrive_query_contains": "resume"
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "review",
+        "autonomy_3": "review",
+        "reason": "has_attachments_to_send hard override"
+      },
+      "draft_quality": {
+        "must_include_calendar_slots": true,
+        "must_include": ["resume"],
+        "tone": "professional, interested",
+        "max_sentences": 5
+      }
+    },
+
+    {
+      "id": "eval_010",
+      "scenario": "Thread reply — casual colleague in ongoing conversation",
+      "input": {
+        "sender": "Priya Sharma <priya@realtor.com>",
+        "subject": "Re: dinner plans",
+        "body": "Hey, did you book the restaurant yet?",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "high",
+        "confidence_min": 0.80,
+        "is_critical": false,
+        "needs_calendar": false,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "send",
+        "autonomy_3": "send"
+      },
+      "draft_quality": {
+        "tone": "very casual, personal",
+        "must_not_include": ["Dear Priya", "I hope this message finds you well"],
+        "max_sentences": 2
+      }
+    }
+
+  ]
+}

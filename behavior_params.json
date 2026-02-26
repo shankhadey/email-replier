@@ -1,0 +1,122 @@
+{
+  "_comment": "Behavioral configuration for Inbox Pilot AI. Edit this file to change how the AI classifies and drafts emails — no code changes needed.",
+  "version": "1.0",
+
+  "user_identity": {
+    "name": "Shankha Dey",
+    "role": "Senior Director of Product Management",
+    "company": "Salesforce",
+    "focus": "Data Cloud, AI/ML initiatives",
+    "context": [
+      "Actively interviewing for VP-level PM roles",
+      "Has a spouse named Priya (real estate agent)",
+      "Receives recruiter emails, executive communications, and technical collaboration requests"
+    ]
+  },
+
+  "voice_profile": {
+    "traits": [
+      "Direct, no fluff — gets to the point immediately",
+      "Short sentences and paragraphs",
+      "Casual with known contacts (e.g. 'Sure man', 'sounds good'), professional but warm with unknowns",
+      "Never over-explains or adds unnecessary context",
+      "Never opens with 'I hope this email finds you well' or similar filler",
+      "Signs off as just 'Shankha' or nothing at all",
+      "Conversational and natural — not corporate or stiff"
+    ],
+    "availability_format": "List dates with times like '2/18: 12-6pm'. No lead-in sentence needed.",
+    "attachment_format": "Brief acknowledgment only. No elaboration.",
+    "examples": [
+      "Hi Alex, Thanks for getting back. You can call me at 4255914898. Here are times I can make this week:\n\n2/18: 12-6pm\n2/19: 10:30-11am, 1:30-6pm\n\nShankha",
+      "I can talk at 10:30am today. Will keep an eye out for your call.",
+      "Sure man, sounds similar to the last one I did with you",
+      "Here's my resume. Down with fever so expect some delays in replies."
+    ]
+  },
+
+  "classification_rules": {
+    "sender_priority": {
+      "high": "Executives, active recruiters, close collaborators, important business contacts",
+      "medium": "Known colleagues, vendors, professional acquaintances",
+      "low": "Mailing lists, newsletters, peripheral contacts",
+      "unknown": "First-time or unrecognized senders with no prior context"
+    },
+    "is_critical_criteria": [
+      "Hard deadline within 24-48 hours",
+      "Financial or payment matter",
+      "Legal or compliance matter",
+      "Job offer or contract decision",
+      "Urgent decision explicitly required"
+    ],
+    "needs_calendar_triggers": [
+      "Asking for Shankha's availability",
+      "Requesting to schedule or confirm a meeting",
+      "Proposing times and asking Shankha to confirm or counter"
+    ],
+    "calendar_days_mapping": {
+      "tomorrow": 2,
+      "this week": 7,
+      "next week": 14,
+      "next two weeks": 14,
+      "this month": 30,
+      "default_if_unspecified": 7
+    },
+    "needs_gdrive_triggers": [
+      "Requesting Shankha's resume",
+      "Asking for a proposal, report, or specific document",
+      "Any request for a file Shankha is likely to have on Drive"
+    ],
+    "skip_triggers": [
+      "Pure newsletters with no reply expected",
+      "Automated system notifications",
+      "Order confirmations and receipts",
+      "Promotional emails not requiring a response"
+    ]
+  },
+
+  "routing_rules": {
+    "hard_overrides": [
+      "has_attachments_to_send=true  → always route to review, regardless of autonomy level",
+      "sender_priority='unknown'     → always route to review, regardless of autonomy level"
+    ],
+    "autonomy_levels": {
+      "1": {
+        "label": "Review All",
+        "behavior": "Every drafted reply goes to the review queue before sending"
+      },
+      "2": {
+        "label": "Smart",
+        "behavior": "Auto-send if: confidence >= threshold AND not critical AND sender is known. Otherwise review."
+      },
+      "3": {
+        "label": "Full Auto",
+        "behavior": "Auto-send everything. Hard overrides still apply."
+      }
+    },
+    "review_triggers_at_level_2": [
+      "confidence < low_confidence_threshold",
+      "is_critical = true",
+      "sender_priority = 'unknown' (hard override)"
+    ]
+  },
+
+  "calendar_defaults": {
+    "timezone": "America/Chicago",
+    "work_start_hour": 8,
+    "work_end_hour": 18,
+    "min_free_slot_minutes": 30,
+    "default_days_ahead": 7,
+    "max_days_ahead": 60
+  },
+
+  "gdrive_defaults": {
+    "search_strategy": "name-first, fall back to fulltext only if no name match found",
+    "max_attachments_per_email": 3
+  },
+
+  "email_fetch_rules": {
+    "query": "is:unread in:inbox -category:promotions -category:social -category:updates",
+    "skip_labels": ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"],
+    "thread_strategy": "reply to the last message in a thread, not the triggering unread message"
+  }
+}
