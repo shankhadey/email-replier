@@ -1,6 +1,6 @@
 {
-  "_comment": "Evaluation test cases for Inbox Pilot. Each case defines an input email and the expected classifier + routing outputs. Run these to verify model behavior after prompt or parameter changes.",
-  "version": "1.0",
+  "_comment": "Evaluation test cases for Inbox Pilot. Each case defines an input email and the expected classifier + routing outputs. Run these to verify model behavior after prompt or parameter changes. Cases 1-10 cover the core classification and routing matrix. Cases 11-13 cover gaps: medium priority auto-send, 'tomorrow' calendar window, and the skip-always rule.",
+  "version": "1.1",
 
   "test_cases": [
 
@@ -261,6 +261,95 @@
         "tone": "professional, interested",
         "max_sentences": 5
       }
+    },
+
+    {
+      "id": "eval_011",
+      "scenario": "Medium-priority vendor — auto-send at L2 and L3",
+      "notes": "Tests the happy path for autonomy L2: known sender, medium priority, high confidence, not critical, no attachments → should auto-send.",
+      "input": {
+        "sender": "Support Team <support@datadog.com>",
+        "subject": "Re: your support ticket #48291",
+        "body": "Hi Shankha, your issue has been resolved. The root cause was a misconfigured metric filter. Let us know if you need anything else.",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "medium",
+        "confidence_min": 0.75,
+        "is_critical": false,
+        "needs_calendar": false,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "send",
+        "autonomy_3": "send",
+        "reason": "medium priority, high confidence, known sender, not critical — L2 auto-send conditions met"
+      },
+      "draft_quality": {
+        "tone": "brief, professional acknowledgment",
+        "must_not_include": ["I hope this email finds you well"],
+        "max_sentences": 2
+      }
+    },
+
+    {
+      "id": "eval_012",
+      "scenario": "Calendar request — 'tomorrow' maps to 2 days",
+      "notes": "Tests that calendar_days_requested is set to 2 when the email says 'tomorrow', not the default 7.",
+      "input": {
+        "sender": "Kevin Liu <kevin@acmestartup.com>",
+        "subject": "Quick call tomorrow?",
+        "body": "Hey Shankha, any chance you're free tomorrow for a 20-minute intro call? Happy to work around your schedule.",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": true,
+        "sender_priority": "high",
+        "confidence_min": 0.80,
+        "is_critical": false,
+        "needs_calendar": true,
+        "calendar_days_requested": 2,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "review",
+        "autonomy_2": "send",
+        "autonomy_3": "send"
+      },
+      "draft_quality": {
+        "must_include_calendar_slots": true,
+        "calendar_window_days": 2,
+        "tone": "casual, direct",
+        "max_sentences": 3
+      }
+    },
+
+    {
+      "id": "eval_013",
+      "scenario": "Skip-always: needs_reply=false regardless of confidence or autonomy level",
+      "notes": "Verifies that when needs_reply=false, the email is always skipped — no draft created, no routing to review. This is the needs_reply gate before routing.",
+      "input": {
+        "sender": "no-reply@github.com",
+        "subject": "Your pull request was merged",
+        "body": "Pull request #142 'Fix null pointer in auth module' was merged into main by octocat.",
+        "has_attachments": false
+      },
+      "expected_classification": {
+        "needs_reply": false,
+        "sender_priority": "low",
+        "is_critical": false,
+        "needs_calendar": false,
+        "needs_gdrive": false
+      },
+      "expected_routing": {
+        "autonomy_1": "skip",
+        "autonomy_2": "skip",
+        "autonomy_3": "skip",
+        "reason": "needs_reply=false means skip before routing — autonomy level is irrelevant"
+      },
+      "draft_quality": null
     },
 
     {
