@@ -12,6 +12,8 @@ let pollHandle = null;
 let lastSeenEventId = 0;
 let newEventCount = 0;
 let activityCollapsed = localStorage.getItem('activityCollapsed') === 'true';
+let currentUser = null;
+let setupPollHandle = null;
 
 // ── Init ─────────────────────────────────────────
 
@@ -27,7 +29,7 @@ async function init() {
 
 async function loadConfig() {
   try {
-    const res = await fetch(`${API}/api/config`);
+    const res = await apiFetch(`${API}/api/config`);
     config = await res.json();
     renderAutonomy(config.autonomy_level);
     renderSettingsForm();
@@ -38,7 +40,7 @@ async function loadConfig() {
 
 async function setAutonomy(level) {
   try {
-    const res = await fetch(`${API}/api/config`, {
+    const res = await apiFetch(`${API}/api/config`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ autonomy_level: level }),
@@ -68,7 +70,7 @@ function renderAutonomy(level) {
 
 async function loadQueue() {
   try {
-    const res = await fetch(`${API}/api/queue`);
+    const res = await apiFetch(`${API}/api/queue`);
     allEmails = await res.json();
     renderQueue();
     renderStats();
@@ -164,7 +166,7 @@ function renderStats() {
 
 async function openModal(id) {
   try {
-    const res = await fetch(`${API}/api/queue/${id}`);
+    const res = await apiFetch(`${API}/api/queue/${id}`);
     currentItem = await res.json();
     renderModal(currentItem);
     editMode = false;
@@ -238,7 +240,7 @@ async function saveDraft() {
   if (!currentItem) return;
   const newDraft = document.getElementById('modal-draft-edit').value;
   try {
-    await fetch(`${API}/api/queue/${currentItem.id}/draft`, {
+    await apiFetch(`${API}/api/queue/${currentItem.id}/draft`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ draft_reply: newDraft }),
@@ -254,7 +256,7 @@ async function saveDraft() {
 
 async function takeAction(id, action) {
   try {
-    await fetch(`${API}/api/queue/${id}/action`, {
+    await apiFetch(`${API}/api/queue/${id}/action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
@@ -299,7 +301,7 @@ async function saveSettings() {
   };
 
   try {
-    const res = await fetch(`${API}/api/config`, {
+    const res = await apiFetch(`${API}/api/config`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -316,7 +318,7 @@ async function saveSettings() {
 
 async function loadSchedulerStatus() {
   try {
-    const res = await fetch(`${API}/api/scheduler/status`);
+    const res = await apiFetch(`${API}/api/scheduler/status`);
     const status = await res.json();
     updateStatusIndicator(status.running);
     if (status.last_run) {
@@ -340,7 +342,7 @@ async function runNow() {
   btn.disabled = true;
   btn.textContent = 'Polling...';
   try {
-    const res = await fetch(`${API}/api/scheduler/run-now`, { method: 'POST' });
+    const res = await apiFetch(`${API}/api/scheduler/run-now`, { method: 'POST' });
     const data = await res.json();
     toast(`Processed ${data.processed} email(s)`, 'success');
     await loadQueue();
@@ -374,7 +376,7 @@ const EVENT_META = {
 
 async function loadEvents() {
   try {
-    const res = await fetch(`${API}/api/events?limit=30`);
+    const res = await apiFetch(`${API}/api/events?limit=30`);
     const events = await res.json();
     if (!events.length) return;
 
@@ -516,17 +518,33 @@ document.addEventListener('DOMContentLoaded', () => {
   init();
 });
 
+// ── API fetch wrapper — handles 401 globally ──────
+
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, options);
+  if (res.status === 401) {
+    showAuthWall();
+    throw new Error('Not authenticated');
+  }
+  return res;
+}
+
 // ── Auth Check ───────────────────────────────────
 
 async function checkAuth() {
   try {
-    const res = await fetch(`${API}/auth/status`);
-    const data = await res.json();
-    if (!data.authorized) {
+    const res = await fetch(`${API}/api/me`);
+    if (res.status === 401 || res.status === 404) {
       showAuthWall();
       return false;
     }
+    currentUser = await res.json();
     hideAuthWall();
+    updateUserInfo();
+    if (currentUser.setup_status === 'pending') {
+      showSetupBanner();
+      startSetupPoll();
+    }
     return true;
   } catch (e) {
     showAuthWall();
@@ -534,9 +552,57 @@ async function checkAuth() {
   }
 }
 
+function updateUserInfo() {
+  const emailEl = document.getElementById('user-email');
+  const logoutBtn = document.getElementById('btn-logout');
+  if (emailEl && currentUser) emailEl.textContent = currentUser.email || '';
+  if (logoutBtn) logoutBtn.style.display = '';
+}
+
+async function logout() {
+  try {
+    await fetch(`${API}/auth/logout`, { method: 'POST' });
+  } catch (e) { /* ignore */ }
+  currentUser = null;
+  if (pollHandle) clearInterval(pollHandle);
+  if (setupPollHandle) clearInterval(setupPollHandle);
+  showAuthWall();
+}
+
+function showSetupBanner() {
+  const banner = document.getElementById('setup-banner');
+  if (banner) banner.classList.remove('hidden');
+}
+
+function hideSetupBanner() {
+  const banner = document.getElementById('setup-banner');
+  if (banner) banner.classList.add('hidden');
+}
+
+function startSetupPoll() {
+  if (setupPollHandle) clearInterval(setupPollHandle);
+  setupPollHandle = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/api/me`);
+      if (!res.ok) return;
+      const user = await res.json();
+      if (user.setup_status === 'complete') {
+        clearInterval(setupPollHandle);
+        setupPollHandle = null;
+        hideSetupBanner();
+        currentUser = user;
+      }
+    } catch (e) { /* ignore */ }
+  }, 5000);
+}
+
 function showAuthWall() {
   document.getElementById('auth-wall').classList.remove('hidden');
   document.getElementById('main-content').classList.add('hidden');
+  const emailEl = document.getElementById('user-email');
+  const logoutBtn = document.getElementById('btn-logout');
+  if (emailEl) emailEl.textContent = '';
+  if (logoutBtn) logoutBtn.style.display = 'none';
 }
 
 function hideAuthWall() {

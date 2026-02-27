@@ -1,16 +1,16 @@
 """
 Gmail operations: fetch unread emails, create drafts, send replies.
+All functions accept a pre-built service object as the first parameter.
 """
 
 import base64
 import logging
+import time
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 from typing import Optional
-
-from auth import get_gmail_service
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +18,12 @@ logger = logging.getLogger(__name__)
 SKIP_LABELS = {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"}
 
 
-def fetch_unread_emails(max_results: int = 20, after_epoch: int = None) -> list[dict]:
+def fetch_unread_emails(service, max_results: int = 20, after_epoch: int = None) -> list[dict]:
     """Fetch unread emails from inbox received after after_epoch (unix timestamp)."""
-    service = get_gmail_service()
     try:
         q = "is:unread in:inbox -category:promotions -category:social -category:updates"
         if after_epoch:
             q += f" after:{after_epoch}"
-        # Fetch more IDs than needed — thread deduplication reduces the count
         fetch_limit = max(max_results * 3, 50)
         result = service.users().messages().list(
             userId="me",
@@ -38,7 +36,6 @@ def fetch_unread_emails(max_results: int = 20, after_epoch: int = None) -> list[
         seen_threads = set()
 
         for msg in messages:
-            # Get thread_id first to deduplicate — multiple unread msgs in same thread
             quick = service.users().messages().get(
                 userId="me", id=msg["id"], format="metadata",
                 metadataHeaders=["From", "Subject"]
@@ -49,7 +46,6 @@ def fetch_unread_emails(max_results: int = 20, after_epoch: int = None) -> list[
                 continue
             seen_threads.add(thread_id)
 
-            # Fetch full thread and use the LAST message (most recent reply)
             thread = service.users().threads().get(
                 userId="me", id=thread_id, format="full"
             ).execute()
@@ -58,19 +54,13 @@ def fetch_unread_emails(max_results: int = 20, after_epoch: int = None) -> list[
             if not thread_messages:
                 continue
 
-            # Last message in thread = most recent (what we reply to)
             detail = thread_messages[-1]
-
-            # Only check skip labels on the last message (the one we'd reply to).
-            # Checking all messages would wrongly drop threads that contain
-            # a newsletter reply alongside a real conversation.
             last_labels = set(detail.get("labelIds", []))
             if last_labels & SKIP_LABELS:
                 continue
 
             parsed = _parse_message(detail)
             if parsed:
-                # Also pass thread context (previous messages) for better drafting
                 parsed["thread_context"] = _extract_thread_context(thread_messages[:-1])
                 emails.append(parsed)
 
@@ -80,12 +70,57 @@ def fetch_unread_emails(max_results: int = 20, after_epoch: int = None) -> list[
         return []
 
 
+def fetch_sent_emails(
+    service,
+    max_results: int = 100,
+    days: int = 30,
+    headers_only: bool = False,
+) -> list[dict]:
+    """
+    Fetch sent emails for background setup (voice profile + contact analysis).
+    headers_only=True returns only To, Subject, snippet (no body download).
+    """
+    after_epoch = int(time.time()) - days * 86400
+    try:
+        result = service.users().messages().list(
+            userId="me",
+            q=f"in:sent after:{after_epoch}",
+            maxResults=max_results,
+        ).execute()
+        messages = result.get("messages", [])
+        emails = []
+        for msg in messages:
+            if headers_only:
+                detail = service.users().messages().get(
+                    userId="me", id=msg["id"], format="metadata",
+                    metadataHeaders=["To", "Subject"]
+                ).execute()
+                headers = {h["name"]: h["value"] for h in detail["payload"].get("headers", [])}
+                emails.append({
+                    "id": detail["id"],
+                    "to": headers.get("To", ""),
+                    "subject": headers.get("Subject", ""),
+                    "snippet": detail.get("snippet", ""),
+                })
+            else:
+                detail = service.users().messages().get(
+                    userId="me", id=msg["id"], format="full"
+                ).execute()
+                parsed = _parse_message(detail)
+                if parsed:
+                    emails.append(parsed)
+        return emails
+    except Exception as e:
+        logger.error(f"Error fetching sent emails: {e}")
+        return []
+
+
 def _extract_thread_context(prior_messages: list) -> str:
     """Extract a short summary of prior messages in thread for drafting context."""
     if not prior_messages:
         return ""
     lines = []
-    for msg in prior_messages[-3:]:  # last 3 prior messages max
+    for msg in prior_messages[-3:]:
         headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
         sender = headers.get("From", "unknown")
         body = _extract_body(msg["payload"])[:500]
@@ -114,7 +149,7 @@ def _parse_message(detail: dict) -> Optional[dict]:
         "in_reply_to": in_reply_to,
         "date": date,
         "snippet": detail.get("snippet", ""),
-        "body": body[:4000],  # cap for LLM context
+        "body": body[:4000],
         "has_attachments": _has_attachments(detail["payload"]),
     }
 
@@ -128,7 +163,6 @@ def _extract_body(payload: dict) -> str:
     if payload.get("mimeType") == "text/html":
         data = payload.get("body", {}).get("data", "")
         if data:
-            # strip basic HTML tags
             import re
             text = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
             return re.sub(r"<[^>]+>", " ", text)
@@ -151,6 +185,7 @@ def _has_attachments(payload: dict) -> bool:
 
 
 def create_reply_draft(
+    service,
     thread_id: str,
     to: str,
     subject: str,
@@ -158,7 +193,6 @@ def create_reply_draft(
     attachments: Optional[list[dict]] = None,
 ) -> Optional[str]:
     """Create a draft reply. Returns draft ID."""
-    service = get_gmail_service()
     msg = _build_message(to, subject, body, attachments)
     msg["threadId"] = thread_id
 
@@ -174,6 +208,7 @@ def create_reply_draft(
 
 
 def send_reply(
+    service,
     thread_id: str,
     to: str,
     subject: str,
@@ -181,7 +216,6 @@ def send_reply(
     attachments: Optional[list[dict]] = None,
 ) -> bool:
     """Send a reply directly. Returns success bool."""
-    service = get_gmail_service()
     msg = _build_message(to, subject, body, attachments)
     msg["threadId"] = thread_id
 
@@ -225,9 +259,8 @@ def _build_message(
     return {"raw": raw}
 
 
-def mark_as_read(message_id: str):
+def mark_as_read(service, message_id: str):
     """Remove UNREAD label from a message."""
-    service = get_gmail_service()
     try:
         service.users().messages().modify(
             userId="me",

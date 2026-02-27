@@ -53,10 +53,15 @@ def draft_reply(
     calendar_slots: Optional[str] = None,
     attachment_names: Optional[list[str]] = None,
     thread_context: Optional[str] = None,
+    params: dict = None,
+    model: str = None,
 ) -> str:
-    """Draft a reply in Shankha's voice."""
-    config = load_config()
-    system_prompt = _build_drafter_prompt(load_params())
+    """Draft a reply in the user's voice."""
+    if params is None:
+        params = load_params()
+    if model is None:
+        model = load_config()["anthropic_model"]
+    system_prompt = _build_drafter_prompt(params)
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
     context_parts = []
@@ -88,7 +93,7 @@ Write the reply body only. Reply to the latest email above, not to earlier messa
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
-                model=config["anthropic_model"],
+                model=model,
                 max_tokens=1024,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],

@@ -7,3 +7,4 @@ anthropic>=0.34.0
 apscheduler==3.10.4
 python-multipart==0.0.9
 aiofiles==23.2.1
+python-jose[cryptography]>=3.3.0
