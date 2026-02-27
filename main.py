@@ -1,28 +1,28 @@
 """
-FastAPI backend for Gmail Replier.
+FastAPI backend for Gmail Replier — multi-user.
 """
 
 import logging
 import os
+import re
+import secrets
+import time
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, HTTPException, Request, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from database import (
-    init_db, get_pending_queue, get_all_queue, get_queue_item,
-    update_queue_item, update_draft_reply, mark_processed,
-    get_recent_events, log_event,
-)
-from gmail_client import send_reply, create_reply_draft
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from jose import JWTError, jwt
+from pydantic import BaseModel, Field
+
+import auth
+import database as db
+import scheduler
 from gdrive_client import search_and_attach
-from config import load_config, save_config
-from scheduler import start_scheduler, stop_scheduler, run_now, get_status, reschedule
-from auth import build_web_flow, save_token_from_flow, is_authorized
+from gmail_client import create_reply_draft, send_reply
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,16 +30,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# In-memory OAuth flow store (single-user app, this is fine)
-_oauth_flow = None
+# ── JWT config ─────────────────────────────────────────────────────────────────
+JWT_SECRET = os.environ.get("JWT_SECRET_KEY", "dev-secret-change-in-production")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_DAYS = 30
+COOKIE_NAME = "session"
 
+# ── In-flight OAuth flows: state -> (Flow, created_at unix ts) ─────────────────
+_oauth_flows: dict[str, tuple] = {}
+
+
+def _cleanup_stale_flows():
+    cutoff = time.time() - 600  # 10 minutes
+    stale = [s for s, (_, ts) in list(_oauth_flows.items()) if ts < cutoff]
+    for s in stale:
+        del _oauth_flows[s]
+
+
+# ── Lifespan ───────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    start_scheduler()
+    db.init_db()
+    scheduler.init_scheduler()
+    for uid in db.get_all_users_with_tokens():
+        try:
+            scheduler.add_user_job(uid)
+        except Exception as e:
+            logger.warning(f"Could not re-add job for {uid}: {e}")
     yield
-    stop_scheduler()
+    scheduler.shutdown_scheduler()
 
 
 app = FastAPI(title="Gmail Replier", lifespan=lifespan)
@@ -51,7 +71,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve frontend
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -60,75 +79,156 @@ def index():
     return FileResponse("frontend/index.html")
 
 
-# ── Auth ─────────────────────────────────────────────────────────────────────
+# ── JWT helpers ────────────────────────────────────────────────────────────────
 
-@app.get("/auth")
-def start_auth(request: Request):
-    """Start the Google OAuth2 flow. Visit this URL in your browser to authorize."""
-    global _oauth_flow
-    redirect_uri = str(request.base_url) + "auth/callback"
-    _oauth_flow = build_web_flow(redirect_uri)
-    auth_url, _ = _oauth_flow.authorization_url(
+def create_session_token(user_id: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
+    return jwt.encode(
+        {"sub": user_id, "exp": expire},
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
+
+
+def get_current_user(request: Request) -> str:
+    """FastAPI dependency — returns user_id or raises 401."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id: str = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# ── Auth endpoints ─────────────────────────────────────────────────────────────
+
+@app.get("/auth/login")
+@app.get("/auth")   # backward-compat alias
+def start_auth():
+    """Redirect to Google OAuth consent screen."""
+    _cleanup_stale_flows()
+    state = secrets.token_urlsafe(32)
+    flow = auth.create_oauth_flow()
+    _oauth_flows[state] = (flow, time.time())
+    auth_url, _ = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true",
         prompt="consent",
+        state=state,
     )
     return RedirectResponse(auth_url)
 
 
 @app.get("/auth/callback")
-def auth_callback(request: Request, code: str = None, error: str = None):
-    """Google redirects here after user authorizes."""
-    global _oauth_flow
+async def auth_callback(request: Request, code: str = None, error: str = None, state: str = None):
+    """Google redirects here after the user authorises."""
+    import asyncio
+
     if error:
         return HTMLResponse(f"<h2>Authorization failed: {error}</h2>", status_code=400)
     if not code:
         return HTMLResponse("<h2>No authorization code received.</h2>", status_code=400)
-    if not _oauth_flow:
+
+    entry = _oauth_flows.pop(state, None) if state else None
+    if entry is None:
         return HTMLResponse(
-            "<h2>OAuth flow expired. Please visit <a href='/auth'>/auth</a> again.</h2>",
+            "<h2>OAuth state mismatch or expired. Please <a href='/auth/login'>try again</a>.</h2>",
             status_code=400,
         )
+    flow, _ = entry
+
     try:
-        redirect_uri = str(request.base_url) + "auth/callback"
-        _oauth_flow.redirect_uri = redirect_uri
-        save_token_from_flow(_oauth_flow, code)
-        _oauth_flow = None
-        return HTMLResponse("""
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset='UTF-8'>
-              <meta http-equiv='refresh' content='2;url=/'>
-              <style>
-                body { background:#0a0a0b; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; font-family:'IBM Plex Mono',monospace; flex-direction:column; gap:16px; }
-                .logo { color:#5b8dee; font-size:18px; letter-spacing:0.15em; font-weight:600; }
-                .msg { color:#3ecf8e; font-size:14px; }
-                .sub { color:#4a4a56; font-size:11px; }
-              </style>
-            </head>
-            <body>
-              <div class='logo'>INBOX PILOT</div>
-              <div class='msg'>Authorization successful.</div>
-              <div class='sub'>Redirecting to app...</div>
-            </body>
-            </html>
-        """)
+        flow.fetch_token(code=code)
     except Exception as e:
-        logger.error(f"Auth callback error: {e}")
-        return HTMLResponse(f"<h2>Error saving token: {e}</h2>", status_code=500)
+        logger.error(f"Token fetch error: {e}")
+        return HTMLResponse(f"<h2>Token exchange failed: {e}</h2>", status_code=500)
+
+    # Decode id_token to get user info — no extra HTTP call needed
+    try:
+        from google.auth.transport.requests import Request as GoogleRequest
+        from google.oauth2 import id_token as google_id_token
+        id_info = google_id_token.verify_oauth2_token(
+            flow.credentials.id_token,
+            GoogleRequest(),
+            os.environ["GOOGLE_CLIENT_ID"],
+        )
+        user_id = id_info["sub"]
+        email = id_info["email"]
+        display_name = id_info.get("name", "")
+    except Exception as e:
+        logger.error(f"id_token decode error: {e}")
+        return HTMLResponse(f"<h2>Could not decode user info: {e}</h2>", status_code=500)
+
+    is_new = db.get_user(user_id) is None
+    db.upsert_user(user_id, email, display_name)
+    db.save_token(user_id, auth.credentials_to_dict(flow.credentials))
+    if is_new:
+        db.set_service_start_epoch(user_id, int(time.time()))
+
+    scheduler.add_user_job(user_id)
+
+    if is_new:
+        try:
+            import background_setup
+            asyncio.create_task(background_setup.run_setup(user_id))
+        except Exception as e:
+            logger.warning(f"Could not start background setup for {user_id}: {e}")
+
+    redirect = RedirectResponse(url="/", status_code=302)
+    redirect.set_cookie(
+        COOKIE_NAME,
+        create_session_token(user_id),
+        httponly=True,
+        samesite="lax",
+        secure=os.environ.get("APP_BASE_URL", "").startswith("https"),
+        max_age=60 * 60 * 24 * JWT_EXPIRE_DAYS,
+    )
+    return redirect
+
+
+@app.post("/auth/logout")
+def logout(response: Response):
+    response.delete_cookie(COOKIE_NAME)
+    return {"ok": True}
 
 
 @app.get("/auth/status")
-def auth_status():
-    return {"authorized": is_authorized()}
+def auth_status(request: Request):
+    """Backward-compat: check if the current request is authenticated."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        return {"authorized": False}
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return {"authorized": bool(payload.get("sub"))}
+    except JWTError:
+        return {"authorized": False}
 
 
-# ── Config ──────────────────────────────────────────────────────────────────
+# ── User info ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/me")
+def get_me(user_id: str = Depends(get_current_user)):
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    return user
+
+
+@app.get("/api/contacts")
+def get_contacts(user_id: str = Depends(get_current_user)):
+    return db.get_contacts(user_id)
+
+
+# ── Config ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/config")
-def get_config():
-    return load_config()
+def get_config(user_id: str = Depends(get_current_user)):
+    return db.load_user_config(user_id)
 
 
 class ConfigUpdate(BaseModel):
@@ -138,31 +238,35 @@ class ConfigUpdate(BaseModel):
     autonomy_level: Optional[int] = Field(None, ge=1, le=3)
     low_confidence_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
     lookback_hours: Optional[int] = Field(None, ge=0)
+    user_timezone: Optional[str] = None
+    anthropic_model: Optional[str] = None
 
 
 @app.patch("/api/config")
-def update_config(body: ConfigUpdate):
+def update_config(body: ConfigUpdate, user_id: str = Depends(get_current_user)):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(400, "No updates provided")
-    config = save_config(updates)
+    current = db.load_user_config(user_id)
+    merged = {**current, **updates}
+    db.save_user_config(user_id, merged)
     if "poll_interval_minutes" in updates:
-        reschedule(updates["poll_interval_minutes"])
-    return config
+        scheduler.add_user_job(user_id)  # reschedule with new interval
+    return merged
 
 
-# ── Queue ────────────────────────────────────────────────────────────────────
+# ── Queue ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/queue")
-def queue(pending_only: bool = False):
+def queue(pending_only: bool = False, user_id: str = Depends(get_current_user)):
     if pending_only:
-        return get_pending_queue()
-    return get_all_queue()
+        return db.get_pending_queue(user_id)
+    return db.get_all_queue(user_id)
 
 
 @app.get("/api/queue/{item_id}")
-def queue_item(item_id: int):
-    item = get_queue_item(item_id)
+def queue_item(item_id: int, user_id: str = Depends(get_current_user)):
+    item = db.get_queue_item(user_id, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
     return item
@@ -173,11 +277,11 @@ class DraftUpdate(BaseModel):
 
 
 @app.put("/api/queue/{item_id}/draft")
-def update_draft(item_id: int, body: DraftUpdate):
-    item = get_queue_item(item_id)
+def update_draft(item_id: int, body: DraftUpdate, user_id: str = Depends(get_current_user)):
+    item = db.get_queue_item(user_id, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
-    update_draft_reply(item_id, body.draft_reply)
+    db.update_draft_reply(user_id, item_id, body.draft_reply)
     return {"ok": True}
 
 
@@ -186,8 +290,8 @@ class ApproveAction(BaseModel):
 
 
 @app.post("/api/queue/{item_id}/action")
-def take_action(item_id: int, body: ApproveAction):
-    item = get_queue_item(item_id)
+def take_action(item_id: int, body: ApproveAction, user_id: str = Depends(get_current_user)):
+    item = db.get_queue_item(user_id, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
     if item["status"] != "pending":
@@ -201,10 +305,13 @@ def take_action(item_id: int, body: ApproveAction):
     attachments = []
     cls = item.get("classification") or {}
     if cls.get("needs_gdrive") and cls.get("gdrive_query"):
-        attachments = search_and_attach(cls["gdrive_query"])
+        drive_service = auth.get_drive_service(user_id)
+        attachments = search_and_attach(drive_service, cls["gdrive_query"])
 
     if body.action == "send":
+        gmail_service = auth.get_gmail_service(user_id)
         success = send_reply(
+            gmail_service,
             thread_id=item["thread_id"],
             to=sender_email,
             subject=reply_subject,
@@ -213,23 +320,25 @@ def take_action(item_id: int, body: ApproveAction):
         )
         if not success:
             raise HTTPException(500, "Failed to send email")
-        update_queue_item(item_id, "sent", "sent by user")
-        log_event("user_sent", f"Sent: '{subject}' → {sender_email}")
+        db.update_queue_item(user_id, item_id, "sent", "sent by user")
+        db.log_event(user_id, "user_sent", f"Sent: '{subject}' → {sender_email}")
 
     elif body.action == "draft":
+        gmail_service = auth.get_gmail_service(user_id)
         create_reply_draft(
+            gmail_service,
             thread_id=item["thread_id"],
             to=sender_email,
             subject=reply_subject,
             body=item["draft_reply"],
             attachments=attachments or None,
         )
-        update_queue_item(item_id, "drafted", "saved as Gmail draft")
-        log_event("user_drafted", f"Saved to drafts: '{subject}'")
+        db.update_queue_item(user_id, item_id, "drafted", "saved as Gmail draft")
+        db.log_event(user_id, "user_drafted", f"Saved to drafts: '{subject}'")
 
     elif body.action == "discard":
-        update_queue_item(item_id, "discarded", "discarded by user")
-        log_event("user_discarded", f"Discarded: '{subject}'")
+        db.update_queue_item(user_id, item_id, "discarded", "discarded by user")
+        db.log_event(user_id, "user_discarded", f"Discarded: '{subject}'")
 
     else:
         raise HTTPException(400, f"Unknown action: {body.action}")
@@ -237,29 +346,31 @@ def take_action(item_id: int, body: ApproveAction):
     return {"ok": True, "action": body.action}
 
 
-# ── Scheduler ────────────────────────────────────────────────────────────────
+# ── Scheduler ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/scheduler/status")
-def scheduler_status():
-    return get_status()
+def scheduler_status(user_id: str = Depends(get_current_user)):
+    return scheduler.get_user_status(user_id)
 
 
 @app.post("/api/scheduler/run-now")
-def trigger_poll():
-    results = run_now()
+def trigger_poll(user_id: str = Depends(get_current_user)):
+    results = scheduler.run_now(user_id)
     return {"processed": len(results), "results": results}
 
 
-# ── Events ────────────────────────────────────────────────────────────────────
+# ── Events ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/events")
-def get_events(limit: int = Query(50, ge=1, le=200)):
-    return get_recent_events(limit)
+def get_events(
+    limit: int = Query(50, ge=1, le=200),
+    user_id: str = Depends(get_current_user),
+):
+    return db.get_recent_events(user_id, limit)
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _extract_email(sender: str) -> str:
-    import re
     match = re.search(r"<([^>]+)>", sender)
     return match.group(1) if match else sender

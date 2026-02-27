@@ -7,8 +7,6 @@ import io
 import logging
 from typing import Optional
 
-from auth import get_drive_service
-
 logger = logging.getLogger(__name__)
 
 # MIME types we can handle as attachments
@@ -28,14 +26,13 @@ EXPORTABLE_MIME = {
 }
 
 
-def search_and_attach(query: str) -> list[dict]:
+def search_and_attach(service, query: str) -> list[dict]:
     """
     Search Drive for files matching the query, return the best match(es)
     as attachment dicts: {filename, data (bytes), mime_type}.
     Tries name-based search first (more precise), falls back to full-text search.
     Returns empty list on failure or no results.
     """
-    service = get_drive_service()
     safe_q = _sanitize(query)
     try:
         files = []
@@ -102,12 +99,11 @@ def _sanitize(query: str) -> str:
     return query.replace("'", "\\'")
 
 
-def get_attachment_names(query: str) -> list[str]:
+def get_attachment_names(service, query: str) -> list[str]:
     """
     Quick search to get just filenames (for drafter context without downloading).
     Tries name-based search first, falls back to full-text search.
     """
-    service = get_drive_service()
     safe_q = _sanitize(query)
     try:
         for q in [

@@ -90,10 +90,15 @@ def classify_email(
     subject: str,
     body: str,
     has_attachments: bool,
+    params: dict = None,
+    model: str = None,
 ) -> dict:
     """Classify an email and return structured classification."""
-    config = load_config()
-    system_prompt = _build_classifier_prompt(load_params())
+    if params is None:
+        params = load_params()
+    if model is None:
+        model = load_config()["anthropic_model"]
+    system_prompt = _build_classifier_prompt(params)
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
     user_prompt = f"""Classify this email:
@@ -111,7 +116,7 @@ Body:
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
-                model=config["anthropic_model"],
+                model=model,
                 max_tokens=512,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],
