@@ -12,6 +12,9 @@ let pollHandle = null;
 let lastSeenEventId = 0;
 let newEventCount = 0;
 let activityCollapsed = localStorage.getItem('activityCollapsed') === 'true';
+const _savedTheme   = localStorage.getItem('theme');
+const _prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+let   currentTheme  = _savedTheme || (_prefersLight ? 'light' : 'dark');
 let currentUser = null;
 let setupPollHandle = null;
 
@@ -524,6 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-run-now').addEventListener('click', runNow);
   document.getElementById('btn-settings').addEventListener('click', openSettings);
   applyActivityCollapsed();
+  applyTheme(currentTheme);
   init();
 });
 
@@ -590,6 +594,21 @@ async function logout() {
 function setActivityPulse(on) {
   const el = document.getElementById('activity-pulse');
   if (el) el.classList.toggle('hidden', !on);
+}
+
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.documentElement.setAttribute('data-theme', theme);
+  const chk = document.getElementById('theme-toggle');
+  if (chk) chk.checked = (theme === 'light');
+  const lbl = document.getElementById('mobile-theme-label');
+  if (lbl) lbl.textContent = theme === 'light' ? 'Dark mode' : 'Light mode';
+}
+
+function toggleTheme(isLight) {
+  const next = isLight ? 'light' : 'dark';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
 }
 
 function toggleMobileMenu() {

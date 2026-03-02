@@ -31,6 +31,18 @@
   --tabs-h: 38px;
 }
 
+html[data-theme="light"] {
+  --bg:            #f5f5f7;
+  --bg-1:          #ffffff;
+  --bg-2:          #ededf2;
+  --bg-3:          #e2e2e8;
+  --border:        #d0d0da;
+  --border-bright: #b8b8c6;
+  --text:          #1a1a22;
+  --text-dim:      #5a5a68;
+  --text-dimmer:   #8a8a98;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 button { touch-action: manipulation; }
 
@@ -864,6 +876,9 @@ header {
   gap: 12px;
 }
 .setting-row:has(.toggle-switch) > label:first-child { flex: 1; }
+
+/* Theme toggle in header — override settings-modal-specific alignment */
+.theme-toggle { align-self: center; margin-top: 0; }
 
 /* ── Toast ──────────────────────────────────── */
 .toast {
