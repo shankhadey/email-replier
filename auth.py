@@ -10,12 +10,30 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from google.auth import _helpers as _ga_helpers
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
 import database as db
+
+
+def _compat_expiry(expiry: Optional[datetime]) -> Optional[datetime]:
+    """Normalize expiry to match the timezone-awareness of the installed google-auth.
+
+    The transport layer internally does utcnow() >= creds.expiry before every
+    request. Old google-auth (<2.28.0) returns a naive utcnow(); new versions
+    return an aware one. Passing the wrong type crashes with a TypeError.
+    """
+    if expiry is None:
+        return None
+    if _ga_helpers.utcnow().tzinfo is not None:
+        # google-auth >= 2.28.0: uses aware UTC
+        return expiry if expiry.tzinfo else expiry.replace(tzinfo=timezone.utc)
+    else:
+        # google-auth < 2.28.0: uses naive UTC
+        return expiry.replace(tzinfo=None)
 
 SCOPES = [
     "openid",
@@ -110,7 +128,7 @@ def get_credentials(user_id: str) -> Credentials:
             client_id=client_id,
             client_secret=client_secret,
             scopes=token_dict.get("scopes", SCOPES),
-            expiry=expiry,
+            expiry=_compat_expiry(expiry),
         )
 
         # Check expiry ourselves with timezone-aware datetimes to avoid
