@@ -359,7 +359,7 @@ header {
 
 .activity-message {
   font-size: 11px;
-  color: rgba(228,228,232,0.82);
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

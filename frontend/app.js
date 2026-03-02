@@ -483,7 +483,7 @@ function extractSenderName(sender) {
 function formatTime(isoStr) {
   if (!isoStr) return '';
   try {
-    const d = new Date(isoStr + (isoStr.endsWith('Z') ? '' : 'Z'));
+    const d = new Date(isoStr.endsWith('Z') || isoStr.includes('+') ? isoStr : isoStr + 'Z');
     const now = new Date();
     const diffMs = now - d;
     const diffMin = Math.floor(diffMs / 60000);
