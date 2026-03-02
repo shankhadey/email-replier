@@ -7,7 +7,7 @@ Client credentials come from GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET env vars.
 
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from google.auth.transport.requests import Request
@@ -113,8 +113,16 @@ def get_credentials(user_id: str) -> Credentials:
             expiry=expiry,
         )
 
-        if not creds.valid:
-            if creds.expired and creds.refresh_token:
+        # Check expiry ourselves with timezone-aware datetimes to avoid
+        # the naive-vs-aware comparison bug in older google-auth versions.
+        expiry = creds.expiry
+        if expiry is not None and expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        token_expired = expiry is not None and datetime.now(timezone.utc) >= expiry - timedelta(seconds=60)
+        token_missing = not creds.token
+
+        if token_expired or token_missing:
+            if creds.refresh_token:
                 creds.refresh(Request())
                 db.save_token(user_id, credentials_to_dict(creds))
             else:
