@@ -47,6 +47,10 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
           Poll now
         </button>
+        <button class="btn-ghost hidden" id="btn-profile" title="Profile" onclick="openProfile()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Profile
+        </button>
         <button class="btn-ghost" id="btn-settings" title="Settings">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
           Settings
@@ -216,6 +220,66 @@
   </div>
 
   </div><!-- /main-content -->
+
+  <!-- Profile Modal -->
+  <div id="profile-overlay" class="modal-overlay hidden" onclick="closeProfile(event)">
+    <div class="modal profile-modal" id="profile-modal">
+      <div class="modal-header">
+        <span class="mono">PROFILE</span>
+        <button class="btn-ghost" onclick="closeProfile()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="profile-tabs">
+        <button class="profile-tab active" data-tab="style" onclick="switchProfileTab('style')">WRITING STYLE</button>
+        <button class="profile-tab" data-tab="contacts" onclick="switchProfileTab('contacts')">CONTACTS</button>
+      </div>
+
+      <!-- Writing Style tab -->
+      <div id="profile-tab-style" class="profile-tab-content">
+        <div class="profile-section">
+          <label class="profile-label">Voice traits <span class="profile-hint">(one per line)</span></label>
+          <textarea id="profile-traits" class="profile-textarea" rows="7" placeholder="e.g. Direct, no fluff — gets to the point immediately"></textarea>
+        </div>
+        <div class="profile-section">
+          <label class="profile-label">Example replies <span class="profile-hint">(one per line — blank line = new example)</span></label>
+          <textarea id="profile-examples" class="profile-textarea" rows="6" placeholder="e.g. Sure man, sounds good"></textarea>
+        </div>
+        <div class="profile-save-row">
+          <button class="btn-primary" onclick="saveWritingStyle()">Save</button>
+        </div>
+      </div>
+
+      <!-- Contacts tab -->
+      <div id="profile-tab-contacts" class="profile-tab-content hidden">
+        <div class="contacts-table-wrap">
+          <table id="contacts-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Relationship</th>
+                <th>Formality</th>
+                <th>Interactions</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="add-contact-form">
+          <div class="add-contact-title mono">ADD CONTACT</div>
+          <div class="add-contact-grid">
+            <input id="new-contact-name" class="profile-input" placeholder="Name" />
+            <input id="new-contact-email" class="profile-input" placeholder="Email *" />
+            <input id="new-contact-rel" class="profile-input" placeholder="Relationship (e.g. colleague)" />
+            <input id="new-contact-formal" class="profile-input" placeholder="Formality (e.g. casual)" />
+          </div>
+          <button class="btn-primary" onclick="addNewContact()">Add contact</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>

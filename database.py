@@ -380,6 +380,30 @@ def get_contacts(user_id: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def update_contact_details(
+    user_id: str,
+    email: str,
+    name: Optional[str],
+    relationship_type: Optional[str],
+    formality_level: Optional[str],
+) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE user_contacts SET name=?, relationship_type=?, formality_level=? WHERE user_id=? AND email=?",
+            (name, relationship_type, formality_level, user_id, email),
+        )
+        conn.commit()
+
+
+def delete_contact(user_id: str, email: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM user_contacts WHERE user_id=? AND email=?",
+            (user_id, email),
+        )
+        conn.commit()
+
+
 # ── Email processing ───────────────────────────────────────────────────────────
 
 def mark_processed(user_id: str, message_id: str, thread_id: str):

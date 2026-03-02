@@ -544,6 +544,8 @@ async function checkAuth() {
     if (currentUser.setup_status === 'pending') {
       showSetupBanner();
       startSetupPoll();
+    } else if (currentUser.setup_status === 'complete') {
+      showProfileBtn();
     }
     return true;
   } catch (e) {
@@ -590,6 +592,7 @@ function startSetupPoll() {
         clearInterval(setupPollHandle);
         setupPollHandle = null;
         hideSetupBanner();
+        showProfileBtn();
         currentUser = user;
       }
     } catch (e) { /* ignore */ }
@@ -608,4 +611,188 @@ function showAuthWall() {
 function hideAuthWall() {
   document.getElementById('auth-wall').classList.add('hidden');
   document.getElementById('main-content').classList.remove('hidden');
+}
+
+// ── Profile modal ─────────────────────────────
+
+let profileData = null;
+let contactsData = [];
+
+function showProfileBtn() {
+  const btn = document.getElementById('btn-profile');
+  if (btn) btn.classList.remove('hidden');
+}
+
+async function openProfile() {
+  try {
+    const [profileRes, contactsRes] = await Promise.all([
+      apiFetch(`${API}/api/profile`),
+      apiFetch(`${API}/api/contacts`),
+    ]);
+    profileData = await profileRes.json();
+    contactsData = await contactsRes.json();
+    renderWritingStyle(profileData);
+    renderContacts(contactsData);
+    switchProfileTab('style');
+    document.getElementById('profile-overlay').classList.remove('hidden');
+  } catch (e) {
+    toast('Failed to load profile', 'error');
+  }
+}
+
+function closeProfile(e) {
+  if (e && e.target !== document.getElementById('profile-overlay')) return;
+  document.getElementById('profile-overlay').classList.add('hidden');
+}
+
+function switchProfileTab(tab) {
+  document.querySelectorAll('.profile-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  document.getElementById('profile-tab-style').classList.toggle('hidden', tab !== 'style');
+  document.getElementById('profile-tab-contacts').classList.toggle('hidden', tab !== 'contacts');
+}
+
+function renderWritingStyle(profile) {
+  const voice = (profile && profile.voice_profile) || {};
+  document.getElementById('profile-traits').value = (voice.traits || []).join('\n');
+  document.getElementById('profile-examples').value = (voice.examples || []).join('\n');
+}
+
+async function saveWritingStyle() {
+  const traits = document.getElementById('profile-traits').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  const examples = document.getElementById('profile-examples').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  const updatedVoice = Object.assign({}, (profileData && profileData.voice_profile) || {}, { traits, examples });
+  try {
+    await apiFetch(`${API}/api/profile`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice_profile: updatedVoice }),
+    });
+    if (profileData) profileData.voice_profile = updatedVoice;
+    toast('Writing style saved', 'success');
+  } catch (e) {
+    toast('Failed to save writing style', 'error');
+  }
+}
+
+// ── Contacts ──────────────────────────────────
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderContacts(contacts) {
+  contactsData = contacts;
+  const tbody = document.querySelector('#contacts-table tbody');
+  tbody.innerHTML = '';
+  contacts.forEach((c, i) => {
+    tbody.appendChild(buildContactRow(c, i));
+  });
+}
+
+function buildContactRow(c, i) {
+  const tr = document.createElement('tr');
+  tr.dataset.idx = i;
+  tr.innerHTML = `
+    <td>${esc(c.name)}</td>
+    <td class="contact-email-cell">${esc(c.email)}</td>
+    <td>${esc(c.relationship_type)}</td>
+    <td>${esc(c.formality_level)}</td>
+    <td>${c.interaction_count || 0}</td>
+    <td class="contact-actions">
+      <button class="btn-micro" data-action="edit" data-idx="${i}">EDIT</button>
+      <button class="btn-micro btn-danger-micro" data-action="delete" data-idx="${i}">×</button>
+    </td>`;
+  return tr;
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const idx = parseInt(btn.dataset.idx);
+  const c = contactsData[idx];
+  if (!c) return;
+  if (btn.dataset.action === 'edit') startEditContact(c, idx);
+  if (btn.dataset.action === 'delete') confirmDeleteContact(c.email, idx);
+  if (btn.dataset.action === 'save-edit') commitEditContact(c, idx);
+  if (btn.dataset.action === 'cancel-edit') cancelEditContact(c, idx);
+});
+
+function startEditContact(c, idx) {
+  const tr = document.querySelector(`#contacts-table tr[data-idx="${idx}"]`);
+  if (!tr) return;
+  tr.innerHTML = `
+    <td><input class="profile-input-sm" id="ce-name-${idx}" value="${esc(c.name)}"></td>
+    <td class="contact-email-cell">${esc(c.email)}</td>
+    <td><input class="profile-input-sm" id="ce-rel-${idx}" value="${esc(c.relationship_type)}"></td>
+    <td><input class="profile-input-sm" id="ce-formal-${idx}" value="${esc(c.formality_level)}"></td>
+    <td>${c.interaction_count || 0}</td>
+    <td class="contact-actions">
+      <button class="btn-micro btn-primary-micro" data-action="save-edit" data-idx="${idx}">SAVE</button>
+      <button class="btn-micro" data-action="cancel-edit" data-idx="${idx}">CANCEL</button>
+    </td>`;
+}
+
+function cancelEditContact(c, idx) {
+  const tr = document.querySelector(`#contacts-table tr[data-idx="${idx}"]`);
+  if (!tr) return;
+  tr.replaceWith(buildContactRow(c, idx));
+}
+
+async function commitEditContact(c, idx) {
+  const name = document.getElementById(`ce-name-${idx}`).value.trim();
+  const rel = document.getElementById(`ce-rel-${idx}`).value.trim();
+  const formal = document.getElementById(`ce-formal-${idx}`).value.trim();
+  try {
+    await apiFetch(`${API}/api/contacts/${encodeURIComponent(c.email)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || null, relationship_type: rel || null, formality_level: formal || null }),
+    });
+    const updated = Object.assign({}, c, { name, relationship_type: rel, formality_level: formal });
+    contactsData[idx] = updated;
+    const tr = document.querySelector(`#contacts-table tr[data-idx="${idx}"]`);
+    if (tr) tr.replaceWith(buildContactRow(updated, idx));
+    toast('Contact updated', 'success');
+  } catch (e) {
+    toast('Failed to update contact', 'error');
+  }
+}
+
+async function confirmDeleteContact(email, idx) {
+  if (!confirm(`Delete contact ${email}?`)) return;
+  try {
+    await apiFetch(`${API}/api/contacts/${encodeURIComponent(email)}`, { method: 'DELETE' });
+    contactsData.splice(idx, 1);
+    renderContacts(contactsData);
+    toast('Contact deleted', 'success');
+  } catch (e) {
+    toast('Failed to delete contact', 'error');
+  }
+}
+
+async function addNewContact() {
+  const name = document.getElementById('new-contact-name').value.trim();
+  const email = document.getElementById('new-contact-email').value.trim();
+  const rel = document.getElementById('new-contact-rel').value.trim();
+  const formal = document.getElementById('new-contact-formal').value.trim();
+  if (!email) { toast('Email is required', 'error'); return; }
+  try {
+    await apiFetch(`${API}/api/contacts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name: name || null, relationship_type: rel || null, formality_level: formal || null }),
+    });
+    contactsData.push({ email, name, relationship_type: rel, formality_level: formal, interaction_count: 0 });
+    renderContacts(contactsData);
+    ['new-contact-name','new-contact-email','new-contact-rel','new-contact-formal'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    toast('Contact added', 'success');
+  } catch (e) {
+    toast('Failed to add contact', 'error');
+  }
 }
