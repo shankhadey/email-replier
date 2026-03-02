@@ -526,6 +526,9 @@ async function apiFetch(url, options = {}) {
     showAuthWall();
     throw new Error('Not authenticated');
   }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
   return res;
 }
 
@@ -636,6 +639,7 @@ async function openProfile() {
     switchProfileTab('style');
     document.getElementById('profile-overlay').classList.remove('hidden');
   } catch (e) {
+    console.error('openProfile error:', e);
     toast('Failed to load profile', 'error');
   }
 }
