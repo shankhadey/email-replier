@@ -42,7 +42,8 @@ Rules:
 4. If calendar availability is provided, include it exactly as formatted (don't reformat it)
 5. If attachment context is provided, mention the attachment naturally and briefly
 6. Never add platitudes, filler phrases, or unnecessary sign-off lines beyond "{name}"
-7. If the email doesn't need a substantive reply, write a minimal acknowledgment"""
+7. If the email doesn't need a substantive reply, write a minimal acknowledgment
+8. If calendar availability is provided and the sender proposes a specific meeting time, ONLY agree if that time falls within one of the listed free slots. If the proposed time is NOT in the free slots, say you are not free then and offer one or two of the listed slots instead"""
 
 
 def draft_reply(

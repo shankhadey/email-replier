@@ -224,6 +224,60 @@ def get_contacts(user_id: str = Depends(get_current_user)):
     return db.get_contacts(user_id)
 
 
+class ContactCreate(BaseModel):
+    email: str
+    name: Optional[str] = None
+    relationship_type: Optional[str] = None
+    formality_level: Optional[str] = None
+
+
+class ContactUpdate(BaseModel):
+    name: Optional[str] = None
+    relationship_type: Optional[str] = None
+    formality_level: Optional[str] = None
+
+
+@app.post("/api/contacts")
+def add_contact(payload: ContactCreate, user_id: str = Depends(get_current_user)):
+    db.upsert_contact(
+        user_id,
+        email=payload.email,
+        name=payload.name,
+        relationship_type=payload.relationship_type,
+        formality_level=payload.formality_level,
+    )
+    return {"ok": True}
+
+
+@app.put("/api/contacts/{contact_email:path}")
+def update_contact(contact_email: str, payload: ContactUpdate, user_id: str = Depends(get_current_user)):
+    db.update_contact_details(user_id, contact_email, payload.name, payload.relationship_type, payload.formality_level)
+    return {"ok": True}
+
+
+@app.delete("/api/contacts/{contact_email:path}")
+def delete_contact_endpoint(contact_email: str, user_id: str = Depends(get_current_user)):
+    db.delete_contact(user_id, contact_email)
+    return {"ok": True}
+
+
+@app.get("/api/profile")
+def get_profile(user_id: str = Depends(get_current_user)):
+    return db.load_user_params(user_id)
+
+
+class ProfileUpdate(BaseModel):
+    voice_profile: dict
+
+
+@app.put("/api/profile")
+def update_profile(payload: ProfileUpdate, user_id: str = Depends(get_current_user)):
+    current = db.load_user_params(user_id)
+    current["voice_profile"] = payload.voice_profile
+    db.save_user_params(user_id, current)
+    return {"ok": True}
+
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/config")
