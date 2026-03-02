@@ -29,7 +29,7 @@
 
     <!-- Setup Banner -->
     <div id="setup-banner" class="setup-banner hidden">
-      Setting up your profile... analysing writing style and contacts (~1 min)
+      <span class="setup-spinner">⟳</span> Setting up your profile... analysing writing style and contacts (~1 min)
     </div>
 
     <!-- Header -->
@@ -110,6 +110,7 @@
     <div id="activity-log" class="activity-log">
       <div class="activity-log-header">
         <span class="activity-log-title">ACTIVITY</span>
+        <span id="activity-pulse" class="activity-pulse hidden"></span>
         <span id="activity-new-badge" class="activity-new-badge hidden"></span>
         <button class="btn-micro" id="btn-activity-toggle" onclick="toggleActivityLog()">HIDE</button>
       </div>

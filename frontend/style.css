@@ -294,6 +294,30 @@ header {
   background: rgba(91,141,238,0.12);
 }
 
+.activity-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: breathe 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1);   opacity: 0.45; }
+  50%       { transform: scale(1.6); opacity: 1;    }
+}
+
+.setup-spinner {
+  display: inline-block;
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 @keyframes entry-flash {
   0%   { background: rgba(91,141,238,0.22); }
   100% { background: transparent; }

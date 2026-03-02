@@ -421,6 +421,11 @@ function renderEvents(events, newIds) {
       </div>
     `;
   }).join('');
+
+  // Show pulse while a scheduler poll is in progress (latest event is poll_start)
+  if (!currentUser || currentUser.setup_status !== 'pending') {
+    setActivityPulse(events[0].event_type === 'poll_start');
+  }
 }
 
 function updateNewBadge() {
@@ -574,14 +579,21 @@ async function logout() {
   showAuthWall();
 }
 
+function setActivityPulse(on) {
+  const el = document.getElementById('activity-pulse');
+  if (el) el.classList.toggle('hidden', !on);
+}
+
 function showSetupBanner() {
   const banner = document.getElementById('setup-banner');
   if (banner) banner.classList.remove('hidden');
+  setActivityPulse(true);
 }
 
 function hideSetupBanner() {
   const banner = document.getElementById('setup-banner');
   if (banner) banner.classList.add('hidden');
+  setActivityPulse(false);
 }
 
 function startSetupPoll() {
