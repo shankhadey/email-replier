@@ -96,7 +96,8 @@ Emails:
     params = db.load_user_params(user_id)
     if "voice_profile" not in params:
         params["voice_profile"] = {}
-    params["voice_profile"]["traits"] = traits_text
+    traits = [line.lstrip("- ").strip() for line in traits_text.splitlines() if line.strip()]
+    params["voice_profile"]["traits"] = traits
     db.save_user_params(user_id, params)
     db.log_event(user_id, "setup_voice", "Writing style analysed and saved")
 

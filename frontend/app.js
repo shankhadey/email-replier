@@ -659,8 +659,9 @@ function switchProfileTab(tab) {
 
 function renderWritingStyle(profile) {
   const voice = (profile && profile.voice_profile) || {};
-  document.getElementById('profile-traits').value = (voice.traits || []).join('\n');
-  document.getElementById('profile-examples').value = (voice.examples || []).join('\n');
+  const toLines = v => Array.isArray(v) ? v : (v || '').split('\n').map(s => s.replace(/^-\s*/, '').trim()).filter(Boolean);
+  document.getElementById('profile-traits').value = toLines(voice.traits).join('\n');
+  document.getElementById('profile-examples').value = toLines(voice.examples).join('\n');
 }
 
 async function saveWritingStyle() {
