@@ -165,6 +165,7 @@ function renderStats() {
 // ── Modal ────────────────────────────────────────
 
 async function openModal(id) {
+  closeMobileMenu();
   try {
     const res = await apiFetch(`${API}/api/queue/${id}`);
     currentItem = await res.json();
@@ -273,6 +274,7 @@ async function takeAction(id, action) {
 // ── Settings ─────────────────────────────────────
 
 function openSettings() {
+  closeMobileMenu();
   renderSettingsForm();
   document.getElementById('settings-overlay').classList.remove('hidden');
 }
@@ -508,8 +510,10 @@ function toast(msg, type = '') {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    closeMobileMenu();
     document.getElementById('modal-overlay').classList.add('hidden');
     document.getElementById('settings-overlay').classList.add('hidden');
+    document.getElementById('profile-overlay').classList.add('hidden');
   }
 });
 
@@ -563,10 +567,14 @@ async function checkAuth() {
 }
 
 function updateUserInfo() {
-  const emailEl = document.getElementById('user-email');
-  const logoutBtn = document.getElementById('btn-logout');
-  if (emailEl && currentUser) emailEl.textContent = currentUser.email || '';
+  const emailEl     = document.getElementById('user-email');
+  const logoutBtn   = document.getElementById('btn-logout');
+  const mobileEmail = document.getElementById('mobile-menu-email');
+  const mobileLgt   = document.getElementById('mobile-btn-logout');
+  if (emailEl && currentUser)     emailEl.textContent     = currentUser.email || '';
+  if (mobileEmail && currentUser) mobileEmail.textContent = currentUser.email || '';
   if (logoutBtn) logoutBtn.style.display = '';
+  if (mobileLgt) mobileLgt.style.display = '';
 }
 
 async function logout() {
@@ -582,6 +590,23 @@ async function logout() {
 function setActivityPulse(on) {
   const el = document.getElementById('activity-pulse');
   if (el) el.classList.toggle('hidden', !on);
+}
+
+function toggleMobileMenu() {
+  const menu = document.getElementById('mobile-menu');
+  const btn  = document.getElementById('btn-hamburger');
+  const open = menu.classList.toggle('open');
+  menu.setAttribute('aria-hidden', String(!open));
+  btn.setAttribute('aria-expanded', String(open));
+}
+
+function closeMobileMenu() {
+  const menu = document.getElementById('mobile-menu');
+  const btn  = document.getElementById('btn-hamburger');
+  if (!menu) return;
+  menu.classList.remove('open');
+  menu.setAttribute('aria-hidden', 'true');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
 function showSetupBanner() {
@@ -621,6 +646,13 @@ function showAuthWall() {
   const logoutBtn = document.getElementById('btn-logout');
   if (emailEl) emailEl.textContent = '';
   if (logoutBtn) logoutBtn.style.display = 'none';
+  const mobileEmail  = document.getElementById('mobile-menu-email');
+  const mobileLgt    = document.getElementById('mobile-btn-logout');
+  const mobileProf   = document.getElementById('mobile-btn-profile');
+  if (mobileEmail) mobileEmail.textContent = '';
+  if (mobileLgt)   mobileLgt.style.display = 'none';
+  if (mobileProf)  mobileProf.classList.add('hidden');
+  closeMobileMenu();
 }
 
 function hideAuthWall() {
@@ -635,10 +667,13 @@ let contactsData = [];
 
 function showProfileBtn() {
   const btn = document.getElementById('btn-profile');
+  const mb  = document.getElementById('mobile-btn-profile');
   if (btn) btn.classList.remove('hidden');
+  if (mb)  mb.classList.remove('hidden');
 }
 
 async function openProfile() {
+  closeMobileMenu();
   try {
     const [profileRes, contactsRes] = await Promise.all([
       apiFetch(`${API}/api/profile`),

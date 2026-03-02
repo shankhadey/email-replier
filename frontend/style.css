@@ -898,6 +898,51 @@ header {
 ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dimmer); }
 
+/* ── Hamburger / Mobile Menu — base (desktop: hidden) ─────── */
+#btn-hamburger { display: none; }
+
+#mobile-menu {
+  display: none;
+  position: fixed;
+  top: var(--header-h);
+  left: 0; right: 0;
+  z-index: 48;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  flex-direction: column;
+}
+#mobile-menu.open { display: flex; }
+
+.mobile-menu-email {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dimmer);
+  padding: 12px 16px 8px;
+}
+
+.mobile-menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.mobile-menu-item:hover  { background: var(--bg-2); color: var(--text); }
+.mobile-menu-item--danger { color: var(--red); }
+.mobile-menu-item--danger:hover { background: rgba(239,68,68,0.08); }
+
 /* ── Responsive ─────────────────────────────── */
 @media (max-width: 600px) {
   header, .autonomy-bar, .stats-bar, .filter-tabs, #queue-container {
@@ -916,6 +961,24 @@ header {
 
   .btn-micro { min-height: 36px; padding: 4px 10px; }
   .activity-log { border-left-width: 3px; }
+
+  /* Hamburger: show it, hide all other header-right children */
+  #btn-hamburger { display: inline-flex; }
+  .header-right > *:not(#btn-hamburger) { display: none !important; }
+
+  /* All modals as full-width bottom-sheets */
+  .settings-modal, .profile-modal {
+    border-radius: 8px 8px 0 0;
+    max-height: 92vh;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Contacts table: let it scroll horizontally rather than squash */
+  #contacts-table { min-width: 480px; }
+
+  /* Add-contact grid: single column */
+  .add-contact-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Auth Wall ──────────────────────────────────── */
