@@ -1,6 +1,6 @@
 {
-  "_comment": "Behavioral configuration for Inbox Pilot AI. Edit this file to change how the AI classifies and drafts emails — no code changes needed.",
-  "version": "1.0",
+  "_comment": "Default behavioral template for Inbox Pilot AI. This file is used as the fallback for new users and as the seed for background setup. Each user's voice profile (built automatically from their sent emails on first login) is stored per-user in the database and overrides the voice_profile section here. Edit this file to change classification rules, identity context, or the default voice template.",
+  "version": "1.1",
 
   "user_identity": {
     "name": "Shankha Dey",

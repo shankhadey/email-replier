@@ -11,30 +11,39 @@ Core processor: orchestrates the full pipeline for each new email.
 import logging
 from typing import Optional
 
+import auth
+import database as db
+from autonomy_engine import route
 from classifier import classify_email
 from drafter import draft_reply
-from autonomy_engine import route
-from database import is_processed, mark_processed, add_to_review_queue, log_event
-from gmail_client import send_reply, create_reply_draft, mark_as_read
 from gcal_client import get_free_slots
-from gdrive_client import search_and_attach, get_attachment_names
-from config import load_config
+from gdrive_client import search_and_attach
+from gmail_client import create_reply_draft, mark_as_read, send_reply
 
 logger = logging.getLogger(__name__)
 
 
-def process_email(email: dict) -> dict:
+def process_email(email: dict, user_id: str) -> dict:
     """
-    Full pipeline for a single email.
+    Full pipeline for a single email belonging to user_id.
     Returns a result dict with action taken.
     """
-    config = load_config()
+    config = db.load_user_config(user_id)
+    params = db.load_user_params(user_id)
+    model = config["anthropic_model"]
     message_id = email["id"]
 
-    if is_processed(message_id):
+    if db.is_processed(user_id, message_id):
         return {"message_id": message_id, "action": "skipped", "reason": "already processed"}
 
-    logger.info(f"Processing: [{email['subject']}] from {email['sender']}")
+    logger.info(f"[{user_id}] Processing: [{email['subject']}] from {email['sender']}")
+
+    # Build gmail service once — reused for send_reply and mark_as_read
+    gmail_service = auth.get_gmail_service(user_id)
+
+    # Contact lookup — used to enrich classification, drafting, and routing
+    sender_email = _extract_email(email["sender"]).lower()
+    contact = db.get_contact_by_email(user_id, sender_email)
 
     # Step 1: Classify
     classification = classify_email(
@@ -42,12 +51,28 @@ def process_email(email: dict) -> dict:
         subject=email["subject"],
         body=email["body"],
         has_attachments=email["has_attachments"],
+        params=params,
+        model=model,
+        contact=contact,
     )
     logger.info(f"  Classification: {classification}")
 
+    # Override sender_priority with known contact data (more reliable than AI inference)
+    if contact:
+        rel = contact.get("relationship_type") or "unknown"
+        prio = contact.get("priority_score") or 0
+        if rel == "personal" or (rel in ("manager", "colleague") and prio >= 0.6):
+            classification["sender_priority"] = "high"
+        elif rel in ("manager", "colleague", "recruiter", "vendor"):
+            classification["sender_priority"] = "medium"
+        classification["relationship_type"] = rel
+    else:
+        classification["relationship_type"] = "unknown"
+
     priority = classification.get("sender_priority", "unknown")
     confidence_pct = round(classification.get("confidence", 0) * 100)
-    log_event(
+    db.log_event(
+        user_id,
         "classified",
         f"'{email['subject']}' from {_sender_name(email['sender'])} "
         f"— {priority} priority, {confidence_pct}% confidence",
@@ -55,8 +80,8 @@ def process_email(email: dict) -> dict:
 
     # Step 2: Skip if no reply needed
     if not classification.get("needs_reply"):
-        log_event("skipped", f"'{email['subject']}' — no reply needed")
-        mark_processed(message_id, email["thread_id"])
+        db.log_event(user_id, "skipped", f"'{email['subject']}' — no reply needed")
+        db.mark_processed(user_id, message_id, email["thread_id"])
         return {"message_id": message_id, "action": "skipped", "reason": "no reply needed"}
 
     # Step 3: Gather context
@@ -67,19 +92,25 @@ def process_email(email: dict) -> dict:
     if classification.get("needs_calendar"):
         days = int(classification.get("calendar_days_requested") or 7)
         days = max(1, min(days, 60))
-        calendar_slots = get_free_slots(days_ahead=days, tz_name=config.get("user_timezone", "America/Chicago"))
+        cal_service = auth.get_calendar_service(user_id)
+        calendar_slots = get_free_slots(
+            cal_service,
+            days_ahead=days,
+            tz_name=config.get("user_timezone", "America/Chicago"),
+        )
         logger.info(f"  Calendar slots ({days}d): {repr(calendar_slots)}")
-        log_event("calendar_checked", f"Checked calendar availability ({days}d window)")
+        db.log_event(user_id, "calendar_checked", f"Checked calendar availability ({days}d window)")
 
     if classification.get("needs_gdrive") and classification.get("gdrive_query"):
         query = classification["gdrive_query"]
-        attachments = search_and_attach(query)
+        drive_service = auth.get_drive_service(user_id)
+        attachments = search_and_attach(drive_service, query)
         attachment_names = [a["filename"] for a in attachments]
         logger.info(f"  Drive attachments: {attachment_names}")
         if attachment_names:
-            log_event("drive_fetched", f"Fetched '{attachment_names[0]}' from Drive")
+            db.log_event(user_id, "drive_fetched", f"Fetched '{attachment_names[0]}' from Drive")
         else:
-            log_event("drive_fetched", f"Drive search for '{query}' — no files found")
+            db.log_event(user_id, "drive_fetched", f"Drive search for '{query}' — no files found")
 
     # Step 4: Draft reply
     has_attachments_to_send = len(attachments) > 0
@@ -91,10 +122,13 @@ def process_email(email: dict) -> dict:
         calendar_slots=calendar_slots,
         attachment_names=attachment_names if attachment_names else None,
         thread_context=email.get("thread_context", ""),
+        params=params,
+        model=model,
+        contact=contact,
     )
 
     if not draft_body:
-        mark_processed(message_id, email["thread_id"])
+        db.mark_processed(user_id, message_id, email["thread_id"])
         return {"message_id": message_id, "action": "error", "reason": "draft generation failed"}
 
     # Step 5: Route
@@ -103,6 +137,7 @@ def process_email(email: dict) -> dict:
         autonomy_level=config["autonomy_level"],
         has_attachments_to_send=has_attachments_to_send,
         low_confidence_threshold=config["low_confidence_threshold"],
+        relationship_type=classification.get("relationship_type", "unknown"),
     )
     logger.info(f"  Routing: {decision.action} - {decision.reason}")
 
@@ -113,11 +148,11 @@ def process_email(email: dict) -> dict:
         else f"Re: {email['subject']}"
     )
     sender_email = _extract_email(email["sender"])
-
     action_taken = decision.action
 
     if decision.action == "send":
         success = send_reply(
+            gmail_service,
             thread_id=email["thread_id"],
             to=sender_email,
             subject=reply_subject,
@@ -128,12 +163,12 @@ def process_email(email: dict) -> dict:
             action_taken = "review"
             decision = type(decision)(action="review", reason="Send failed, queued for review")
         else:
-            log_event("sent", f"Auto-sent to {sender_email} — '{reply_subject}'")
+            db.log_event(user_id, "sent", f"Auto-sent to {sender_email} — '{reply_subject}'")
 
     if action_taken in ("review",):
-        log_event("queued", f"Queued for review: '{email['subject']}' — {decision.reason}")
-        # Add to review queue (this also covers cases where send failed)
-        add_to_review_queue(
+        db.log_event(user_id, "queued", f"Queued for review: '{email['subject']}' — {decision.reason}")
+        db.add_to_review_queue(
+            user_id=user_id,
             message_id=message_id,
             thread_id=email["thread_id"],
             sender=email["sender"],
@@ -149,8 +184,8 @@ def process_email(email: dict) -> dict:
             },
         )
 
-    mark_processed(message_id, email["thread_id"])
-    mark_as_read(message_id)
+    db.mark_processed(user_id, message_id, email["thread_id"])
+    mark_as_read(gmail_service, message_id)
 
     return {
         "message_id": message_id,

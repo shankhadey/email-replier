@@ -31,6 +31,18 @@
   --tabs-h: 38px;
 }
 
+html[data-theme="light"] {
+  --bg:            #f5f5f7;
+  --bg-1:          #ffffff;
+  --bg-2:          #ededf2;
+  --bg-3:          #e2e2e8;
+  --border:        #d0d0da;
+  --border-bright: #b8b8c6;
+  --text:          #1a1a22;
+  --text-dim:      #5a5a68;
+  --text-dimmer:   #8a8a98;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 button { touch-action: manipulation; }
 
@@ -294,6 +306,30 @@ header {
   background: rgba(91,141,238,0.12);
 }
 
+.activity-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: breathe 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1);   opacity: 0.45; }
+  50%       { transform: scale(1.6); opacity: 1;    }
+}
+
+.setup-spinner {
+  display: inline-block;
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 @keyframes entry-flash {
   0%   { background: rgba(91,141,238,0.22); }
   100% { background: transparent; }
@@ -323,7 +359,7 @@ header {
 
 .activity-message {
   font-size: 11px;
-  color: rgba(228,228,232,0.82);
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -841,6 +877,9 @@ header {
 }
 .setting-row:has(.toggle-switch) > label:first-child { flex: 1; }
 
+/* Theme toggle in header — override settings-modal-specific alignment */
+.theme-toggle { align-self: center; margin-top: 0; }
+
 /* ── Toast ──────────────────────────────────── */
 .toast {
   position: fixed;
@@ -874,6 +913,51 @@ header {
 ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dimmer); }
 
+/* ── Hamburger / Mobile Menu — base (desktop: hidden) ─────── */
+#btn-hamburger { display: none; }
+
+#mobile-menu {
+  display: none;
+  position: fixed;
+  top: var(--header-h);
+  left: 0; right: 0;
+  z-index: 48;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  flex-direction: column;
+}
+#mobile-menu.open { display: flex; }
+
+.mobile-menu-email {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dimmer);
+  padding: 12px 16px 8px;
+}
+
+.mobile-menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.mobile-menu-item:hover  { background: var(--bg-2); color: var(--text); }
+.mobile-menu-item--danger { color: var(--red); }
+.mobile-menu-item--danger:hover { background: rgba(239,68,68,0.08); }
+
 /* ── Responsive ─────────────────────────────── */
 @media (max-width: 600px) {
   header, .autonomy-bar, .stats-bar, .filter-tabs, #queue-container {
@@ -892,6 +976,24 @@ header {
 
   .btn-micro { min-height: 36px; padding: 4px 10px; }
   .activity-log { border-left-width: 3px; }
+
+  /* Hamburger: show it, hide all other header-right children */
+  #btn-hamburger { display: inline-flex; }
+  .header-right > *:not(#btn-hamburger) { display: none !important; }
+
+  /* All modals as full-width bottom-sheets */
+  .settings-modal, .profile-modal {
+    border-radius: 8px 8px 0 0;
+    max-height: 92vh;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Contacts table: let it scroll horizontally rather than squash */
+  #contacts-table { min-width: 480px; }
+
+  /* Add-contact grid: single column */
+  .add-contact-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Auth Wall ──────────────────────────────────── */
@@ -948,4 +1050,251 @@ header {
   color: var(--text-dimmer);
   max-width: 320px;
   line-height: 1.6;
+}
+
+/* ── Setup banner ─────────────────────────────── */
+.setup-banner {
+  background: rgba(91,141,238,0.1);
+  border-bottom: 1px solid rgba(91,141,238,0.25);
+  color: rgba(91,141,238,0.8);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 8px 20px;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+/* ── User email in header ─────────────────────── */
+.user-email {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dimmer);
+  margin-right: 8px;
+}
+
+/* ── Profile modal ───────────────────────────── */
+.profile-modal {
+  max-width: 720px;
+  width: 95vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.profile-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.profile-tab {
+  background: none;
+  border: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 10px 12px 8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.profile-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.profile-tab-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.profile-hint {
+  font-size: 9px;
+  color: var(--text-dimmer);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.profile-textarea {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.profile-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.profile-save-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+/* contacts table */
+.contacts-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+#contacts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+#contacts-table th {
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-dimmer);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+#contacts-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+#contacts-table tr:last-child td {
+  border-bottom: none;
+}
+
+#contacts-table tr:hover td {
+  background: rgba(255,255,255,0.02);
+}
+
+.contact-email-cell {
+  color: var(--text-dim);
+  font-size: 10px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.topics-cell { max-width: 200px; }
+.topic-tag {
+  display: inline-block;
+  background: var(--bg-3);
+  color: var(--text-dim);
+  border-radius: 3px;
+  font-size: 10px;
+  padding: 1px 5px;
+  margin: 1px 2px 1px 0;
+  white-space: nowrap;
+}
+
+.btn-danger-micro {
+  color: #e05c5c;
+  border-color: rgba(224,92,92,0.3);
+}
+
+.btn-danger-micro:hover {
+  background: rgba(224,92,92,0.1);
+  border-color: rgba(224,92,92,0.5);
+  color: #e05c5c;
+}
+
+.btn-primary-micro {
+  color: var(--accent);
+  border-color: rgba(91,141,238,0.4);
+}
+
+.profile-input-sm {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 7px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.profile-input-sm:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* add contact form */
+.add-contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.add-contact-title {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-dimmer);
+}
+
+.add-contact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.profile-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 7px 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.profile-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }

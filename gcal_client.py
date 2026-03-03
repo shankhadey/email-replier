@@ -7,12 +7,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from auth import get_calendar_service
-
 logger = logging.getLogger(__name__)
 
 
 def get_free_slots(
+    service,
     days_ahead: int = 7,
     work_start: int = 8,
     work_end: int = 18,
@@ -24,7 +23,6 @@ def get_free_slots(
     tz_name: IANA timezone for the user (default: America/Chicago for Shankha).
     """
     import zoneinfo
-    service = get_calendar_service()
     user_tz = zoneinfo.ZoneInfo(tz_name)
     now = datetime.now(user_tz)
     time_min = now.isoformat()

@@ -2,7 +2,7 @@
 
 AI-powered Gmail assistant that reads incoming emails, decides whether to reply, drafts replies in your voice, and routes them based on your autonomy setting.
 
-Connects to Gmail, Google Calendar, and Google Drive. Hosted on Render (free tier or paid).
+Connects to Gmail, Google Calendar, and Google Drive. Supports multiple users — each Google account is isolated with its own queue, settings, and AI profile. Hosted on Render (free tier or paid).
 
 ---
 
@@ -18,16 +18,20 @@ Connects to Gmail, Google Calendar, and Google Drive. Hosted on Render (free tie
    - **Google Drive API**
 4. Go to **APIs & Services > Credentials**
 5. Create **OAuth 2.0 Client ID** → Web Application
-6. Add your Render URL as an authorized redirect URI: `https://<your-app>.onrender.com/auth/callback`
-7. Download the JSON file, rename it to `credentials.json`, place it in the project root
+6. Add your app URL as an authorized redirect URI: `https://<your-app>.onrender.com/auth/callback`
+7. Note your **Client ID** and **Client Secret** — you'll set them as env vars below
 
-### 2. Anthropic API Key
+### 2. Environment Variables
 
-Set as an environment variable (in Render's environment settings or locally):
+Set all of these in Render (or locally via `export`):
 
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key (`sk-ant-...`) |
+| `GOOGLE_CLIENT_ID` | Yes | OAuth 2.0 client ID from Google Cloud |
+| `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 client secret |
+| `APP_BASE_URL` | Yes | Full app URL, no trailing slash — e.g. `https://your-app.onrender.com` |
+| `JWT_SECRET_KEY` | Yes | Random 32-byte hex: `python -c "import secrets; print(secrets.token_hex(32))"` |
 
 ### 3. Install Dependencies
 
@@ -35,19 +39,37 @@ export ANTHROPIC_API_KEY=sk-ant-...
 pip install -r requirements.txt
 ```
 
-### 4. First Run (OAuth Authorization)
+### 4. First Run
 
 ```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export GOOGLE_CLIENT_ID=...
+export GOOGLE_CLIENT_SECRET=...
+export APP_BASE_URL=http://localhost:8000
+export JWT_SECRET_KEY=<32-byte hex>
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Visit the app URL and click **Authorize with Google**. After authorizing, `token.json` is saved and reused automatically.
+Visit the app and click **Sign in with Google**. After authorising, your token is stored in the database automatically. Multiple users can each sign in with their own Google account — everything is isolated per account.
+
+On first login, background setup runs automatically (~1 min): Inbox Pilot analyses your sent emails to learn your writing style, and classifies your top contacts for smarter drafting.
+
+---
+
+## Multi-User
+
+Each Google account that signs in gets:
+- Its own review queue (no cross-user data leakage)
+- Its own config (poll interval, autonomy level, etc.)
+- Its own AI voice profile (built from that account's sent emails)
+- Its own scheduler job
+- Its own activity log
 
 ---
 
 ## Configuring AI Behavior
 
-Edit **`behavior_params.json`** to change how the AI classifies and drafts emails — no code changes needed. Changes take effect on the next processed email.
+Edit **`behavior_params.json`** to change how the AI classifies and drafts emails — no code changes needed. This file serves as the default template; each user's profile (built during setup) is stored per-user in the database and overrides these defaults.
 
 | Section | What it controls |
 |---|---|
@@ -59,13 +81,11 @@ Edit **`behavior_params.json`** to change how the AI classifies and drafts email
 | `gdrive_defaults` | Search strategy for Drive attachments |
 | `email_fetch_rules` | Gmail query and label filters |
 
-**How it works:** `params.py` loads `behavior_params.json` on every API call. `classifier.py` and `drafter.py` build their system prompts from the loaded params — so the AI model receives the latest version of your parameters on each email processed.
-
 ---
 
 ## Operational Configuration
 
-Settings adjustable via the UI (Settings panel) or `config.json`:
+Settings adjustable via the UI (Settings panel) — stored per-user in the database:
 
 | Key | Default | Description |
 |---|---|---|
@@ -136,23 +156,23 @@ Each case specifies the input email, expected classification fields, expected ro
 
 ```
 inbox-pilot/
-├── main.py              # FastAPI server + API routes
-├── config.py            # Operational settings (poll interval, autonomy level, etc.)
-├── params.py            # Behavioral parameters loader (reads behavior_params.json)
-├── behavior_params.json # AI persona, voice, classification rules — edit to tune behavior
+├── main.py              # FastAPI server, JWT auth, all API routes
+├── auth.py              # Google OAuth2 — multi-user, tokens stored in DB
+├── background_setup.py  # First-login setup: voice profile + contact analysis
+├── config.py            # Default config values (per-user config lives in DB)
+├── params.py            # Behavioral parameters loader (reads behavior_params.json as default)
+├── behavior_params.json # Default AI persona, voice, classification rules
 ├── evals.json           # Test cases for classifier and drafter evaluation
-├── auth.py              # Google OAuth2
 ├── gmail_client.py      # Gmail: read, draft, send
 ├── gcal_client.py       # Calendar: free/busy across all connected calendars
 ├── gdrive_client.py     # Drive: name-first search + attach
 ├── classifier.py        # Claude: classify email (prompt built from behavior_params.json)
 ├── drafter.py           # Claude: draft reply (prompt built from behavior_params.json)
-├── processor.py         # Orchestration pipeline
+├── processor.py         # Orchestration pipeline (per-user)
 ├── autonomy_engine.py   # Routing logic (send / review / skip)
-├── scheduler.py         # APScheduler poll loop
-├── database.py          # SQLite persistence + activity log
+├── scheduler.py         # APScheduler — per-user poll jobs
+├── database.py          # SQLite: users, tokens, configs, queue, activity log
 ├── requirements.txt
-├── credentials.json     # ← you provide this (Google OAuth client)
 └── frontend/
     ├── index.html
     ├── app.js
@@ -165,6 +185,10 @@ inbox-pilot/
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
+export GOOGLE_CLIENT_ID=...
+export GOOGLE_CLIENT_SECRET=...
+export APP_BASE_URL=http://localhost:8000
+export JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -176,7 +200,11 @@ Visit: [http://localhost:8000](http://localhost:8000)
 
 1. Push to GitHub
 2. Create a new **Web Service** on Render pointing to your repo
-3. Set environment variables: `ANTHROPIC_API_KEY`
-4. Upload `credentials.json` and `token.json` as part of your deployment or as Render secrets
+3. Set all five environment variables in Render's **Environment** tab:
+   - `ANTHROPIC_API_KEY`
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+   - `APP_BASE_URL` (your Render URL, e.g. `https://your-app.onrender.com`)
+   - `JWT_SECRET_KEY` (generate once and keep it stable — changing it invalidates all sessions)
 
-**Note on free tier:** Render free tier uses an ephemeral filesystem — `gmail_replier.db` (SQLite) and `token.json` will be wiped on every restart. For persistence, use Render's Persistent Disk add-on or an external database.
+**Note on free tier:** Render free tier uses an ephemeral filesystem — `gmail_replier.db` (SQLite) will be wiped on every restart. For persistence, use Render's **Persistent Disk** add-on and mount it at `/data`, then set `DB_FILE` to `/data/gmail_replier.db`.

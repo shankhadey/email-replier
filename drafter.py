@@ -3,6 +3,7 @@ Draft email replies in Shankha's voice using Claude.
 Optionally injects calendar availability and GDrive attachment names.
 """
 
+import json
 import logging
 import os
 import time
@@ -42,7 +43,8 @@ Rules:
 4. If calendar availability is provided, include it exactly as formatted (don't reformat it)
 5. If attachment context is provided, mention the attachment naturally and briefly
 6. Never add platitudes, filler phrases, or unnecessary sign-off lines beyond "{name}"
-7. If the email doesn't need a substantive reply, write a minimal acknowledgment"""
+7. If the email doesn't need a substantive reply, write a minimal acknowledgment
+8. If calendar availability is provided and the sender proposes a specific meeting time, ONLY agree if that time falls within one of the listed free slots. If the proposed time is NOT in the free slots, say you are not free then and offer one or two of the listed slots instead"""
 
 
 def draft_reply(
@@ -53,10 +55,37 @@ def draft_reply(
     calendar_slots: Optional[str] = None,
     attachment_names: Optional[list[str]] = None,
     thread_context: Optional[str] = None,
+    params: dict = None,
+    model: str = None,
+    contact: Optional[dict] = None,
 ) -> str:
-    """Draft a reply in Shankha's voice."""
-    config = load_config()
-    system_prompt = _build_drafter_prompt(load_params())
+    """Draft a reply in the user's voice."""
+    if params is None:
+        params = load_params()
+    if model is None:
+        model = load_config()["anthropic_model"]
+    system_prompt = _build_drafter_prompt(params)
+
+    # Append contact-specific tone instructions if available
+    if contact:
+        rel  = contact.get("relationship_type", "")
+        form = contact.get("formality_level", "")
+        try:
+            topics_list = json.loads(contact.get("topics") or "[]")
+        except Exception:
+            topics_list = []
+        parts = []
+        if form == "casual":
+            parts.append("Use a casual, friendly tone — this is someone the user knows well.")
+        elif form == "formal":
+            parts.append("Use a professional, formal tone.")
+        if rel == "personal":
+            parts.append("This is a personal contact.")
+        if topics_list:
+            parts.append(f"Shared topics with this contact: {', '.join(topics_list)}.")
+        if parts:
+            system_prompt += "\n\nContact context: " + " ".join(parts)
+
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
     context_parts = []
@@ -88,7 +117,7 @@ Write the reply body only. Reply to the latest email above, not to earlier messa
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
-                model=config["anthropic_model"],
+                model=model,
                 max_tokens=1024,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],

@@ -12,6 +12,11 @@ let pollHandle = null;
 let lastSeenEventId = 0;
 let newEventCount = 0;
 let activityCollapsed = localStorage.getItem('activityCollapsed') === 'true';
+const _savedTheme   = localStorage.getItem('theme');
+const _prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+let   currentTheme  = _savedTheme || (_prefersLight ? 'light' : 'dark');
+let currentUser = null;
+let setupPollHandle = null;
 
 // ── Init ─────────────────────────────────────────
 
@@ -27,7 +32,7 @@ async function init() {
 
 async function loadConfig() {
   try {
-    const res = await fetch(`${API}/api/config`);
+    const res = await apiFetch(`${API}/api/config`);
     config = await res.json();
     renderAutonomy(config.autonomy_level);
     renderSettingsForm();
@@ -38,7 +43,7 @@ async function loadConfig() {
 
 async function setAutonomy(level) {
   try {
-    const res = await fetch(`${API}/api/config`, {
+    const res = await apiFetch(`${API}/api/config`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ autonomy_level: level }),
@@ -68,7 +73,7 @@ function renderAutonomy(level) {
 
 async function loadQueue() {
   try {
-    const res = await fetch(`${API}/api/queue`);
+    const res = await apiFetch(`${API}/api/queue`);
     allEmails = await res.json();
     renderQueue();
     renderStats();
@@ -163,8 +168,9 @@ function renderStats() {
 // ── Modal ────────────────────────────────────────
 
 async function openModal(id) {
+  closeMobileMenu();
   try {
-    const res = await fetch(`${API}/api/queue/${id}`);
+    const res = await apiFetch(`${API}/api/queue/${id}`);
     currentItem = await res.json();
     renderModal(currentItem);
     editMode = false;
@@ -238,7 +244,7 @@ async function saveDraft() {
   if (!currentItem) return;
   const newDraft = document.getElementById('modal-draft-edit').value;
   try {
-    await fetch(`${API}/api/queue/${currentItem.id}/draft`, {
+    await apiFetch(`${API}/api/queue/${currentItem.id}/draft`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ draft_reply: newDraft }),
@@ -254,7 +260,7 @@ async function saveDraft() {
 
 async function takeAction(id, action) {
   try {
-    await fetch(`${API}/api/queue/${id}/action`, {
+    await apiFetch(`${API}/api/queue/${id}/action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
@@ -271,6 +277,7 @@ async function takeAction(id, action) {
 // ── Settings ─────────────────────────────────────
 
 function openSettings() {
+  closeMobileMenu();
   renderSettingsForm();
   document.getElementById('settings-overlay').classList.remove('hidden');
 }
@@ -299,7 +306,7 @@ async function saveSettings() {
   };
 
   try {
-    const res = await fetch(`${API}/api/config`, {
+    const res = await apiFetch(`${API}/api/config`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -316,7 +323,7 @@ async function saveSettings() {
 
 async function loadSchedulerStatus() {
   try {
-    const res = await fetch(`${API}/api/scheduler/status`);
+    const res = await apiFetch(`${API}/api/scheduler/status`);
     const status = await res.json();
     updateStatusIndicator(status.running);
     if (status.last_run) {
@@ -340,7 +347,7 @@ async function runNow() {
   btn.disabled = true;
   btn.textContent = 'Polling...';
   try {
-    const res = await fetch(`${API}/api/scheduler/run-now`, { method: 'POST' });
+    const res = await apiFetch(`${API}/api/scheduler/run-now`, { method: 'POST' });
     const data = await res.json();
     toast(`Processed ${data.processed} email(s)`, 'success');
     await loadQueue();
@@ -374,7 +381,7 @@ const EVENT_META = {
 
 async function loadEvents() {
   try {
-    const res = await fetch(`${API}/api/events?limit=30`);
+    const res = await apiFetch(`${API}/api/events?limit=30`);
     const events = await res.json();
     if (!events.length) return;
 
@@ -419,6 +426,11 @@ function renderEvents(events, newIds) {
       </div>
     `;
   }).join('');
+
+  // Show pulse while a scheduler poll is in progress (latest event is poll_start)
+  if (!currentUser || currentUser.setup_status !== 'pending') {
+    setActivityPulse(events[0].event_type === 'poll_start');
+  }
 }
 
 function updateNewBadge() {
@@ -471,7 +483,7 @@ function extractSenderName(sender) {
 function formatTime(isoStr) {
   if (!isoStr) return '';
   try {
-    const d = new Date(isoStr + (isoStr.endsWith('Z') ? '' : 'Z'));
+    const d = new Date(isoStr.endsWith('Z') || isoStr.includes('+') ? isoStr : isoStr + 'Z');
     const now = new Date();
     const diffMs = now - d;
     const diffMin = Math.floor(diffMs / 60000);
@@ -501,8 +513,10 @@ function toast(msg, type = '') {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    closeMobileMenu();
     document.getElementById('modal-overlay').classList.add('hidden');
     document.getElementById('settings-overlay').classList.add('hidden');
+    document.getElementById('profile-overlay').classList.add('hidden');
   }
 });
 
@@ -513,20 +527,42 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-run-now').addEventListener('click', runNow);
   document.getElementById('btn-settings').addEventListener('click', openSettings);
   applyActivityCollapsed();
+  applyTheme(currentTheme);
   init();
 });
+
+// ── API fetch wrapper — handles 401 globally ──────
+
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, options);
+  if (res.status === 401) {
+    showAuthWall();
+    throw new Error('Not authenticated');
+  }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res;
+}
 
 // ── Auth Check ───────────────────────────────────
 
 async function checkAuth() {
   try {
-    const res = await fetch(`${API}/auth/status`);
-    const data = await res.json();
-    if (!data.authorized) {
+    const res = await fetch(`${API}/api/me`);
+    if (res.status === 401 || res.status === 404) {
       showAuthWall();
       return false;
     }
+    currentUser = await res.json();
     hideAuthWall();
+    updateUserInfo();
+    if (currentUser.setup_status === 'pending') {
+      showSetupBanner();
+      startSetupPoll();
+    } else if (currentUser.setup_status === 'complete') {
+      showProfileBtn();
+    }
     return true;
   } catch (e) {
     showAuthWall();
@@ -534,12 +570,306 @@ async function checkAuth() {
   }
 }
 
+function updateUserInfo() {
+  const emailEl     = document.getElementById('user-email');
+  const logoutBtn   = document.getElementById('btn-logout');
+  const mobileEmail = document.getElementById('mobile-menu-email');
+  const mobileLgt   = document.getElementById('mobile-btn-logout');
+  if (emailEl && currentUser)     emailEl.textContent     = currentUser.email || '';
+  if (mobileEmail && currentUser) mobileEmail.textContent = currentUser.email || '';
+  if (logoutBtn) logoutBtn.style.display = '';
+  if (mobileLgt) mobileLgt.style.display = '';
+}
+
+async function logout() {
+  try {
+    await fetch(`${API}/auth/logout`, { method: 'POST' });
+  } catch (e) { /* ignore */ }
+  currentUser = null;
+  if (pollHandle) clearInterval(pollHandle);
+  if (setupPollHandle) clearInterval(setupPollHandle);
+  showAuthWall();
+}
+
+function setActivityPulse(on) {
+  const el = document.getElementById('activity-pulse');
+  if (el) el.classList.toggle('hidden', !on);
+}
+
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.documentElement.setAttribute('data-theme', theme);
+  const chk = document.getElementById('theme-toggle');
+  if (chk) chk.checked = (theme === 'light');
+  const lbl = document.getElementById('mobile-theme-label');
+  if (lbl) lbl.textContent = theme === 'light' ? 'Dark mode' : 'Light mode';
+}
+
+function toggleTheme(isLight) {
+  const next = isLight ? 'light' : 'dark';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
+}
+
+function toggleMobileMenu() {
+  const menu = document.getElementById('mobile-menu');
+  const btn  = document.getElementById('btn-hamburger');
+  const open = menu.classList.toggle('open');
+  menu.setAttribute('aria-hidden', String(!open));
+  btn.setAttribute('aria-expanded', String(open));
+}
+
+function closeMobileMenu() {
+  const menu = document.getElementById('mobile-menu');
+  const btn  = document.getElementById('btn-hamburger');
+  if (!menu) return;
+  menu.classList.remove('open');
+  menu.setAttribute('aria-hidden', 'true');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function showSetupBanner() {
+  const banner = document.getElementById('setup-banner');
+  if (banner) banner.classList.remove('hidden');
+  setActivityPulse(true);
+}
+
+function hideSetupBanner() {
+  const banner = document.getElementById('setup-banner');
+  if (banner) banner.classList.add('hidden');
+  setActivityPulse(false);
+}
+
+function startSetupPoll() {
+  if (setupPollHandle) clearInterval(setupPollHandle);
+  setupPollHandle = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/api/me`);
+      if (!res.ok) return;
+      const user = await res.json();
+      if (user.setup_status === 'complete') {
+        clearInterval(setupPollHandle);
+        setupPollHandle = null;
+        hideSetupBanner();
+        showProfileBtn();
+        currentUser = user;
+      }
+    } catch (e) { /* ignore */ }
+  }, 5000);
+}
+
 function showAuthWall() {
   document.getElementById('auth-wall').classList.remove('hidden');
   document.getElementById('main-content').classList.add('hidden');
+  const emailEl = document.getElementById('user-email');
+  const logoutBtn = document.getElementById('btn-logout');
+  if (emailEl) emailEl.textContent = '';
+  if (logoutBtn) logoutBtn.style.display = 'none';
+  const mobileEmail  = document.getElementById('mobile-menu-email');
+  const mobileLgt    = document.getElementById('mobile-btn-logout');
+  const mobileProf   = document.getElementById('mobile-btn-profile');
+  if (mobileEmail) mobileEmail.textContent = '';
+  if (mobileLgt)   mobileLgt.style.display = 'none';
+  if (mobileProf)  mobileProf.classList.add('hidden');
+  closeMobileMenu();
 }
 
 function hideAuthWall() {
   document.getElementById('auth-wall').classList.add('hidden');
   document.getElementById('main-content').classList.remove('hidden');
+}
+
+// ── Profile modal ─────────────────────────────
+
+let profileData = null;
+let contactsData = [];
+
+function showProfileBtn() {
+  const btn = document.getElementById('btn-profile');
+  const mb  = document.getElementById('mobile-btn-profile');
+  if (btn) btn.classList.remove('hidden');
+  if (mb)  mb.classList.remove('hidden');
+}
+
+async function openProfile() {
+  closeMobileMenu();
+  try {
+    const [profileRes, contactsRes] = await Promise.all([
+      apiFetch(`${API}/api/profile`),
+      apiFetch(`${API}/api/contacts`),
+    ]);
+    profileData = await profileRes.json();
+    contactsData = await contactsRes.json();
+    renderWritingStyle(profileData);
+    renderContacts(contactsData);
+    switchProfileTab('style');
+    document.getElementById('profile-overlay').classList.remove('hidden');
+  } catch (e) {
+    console.error('openProfile error:', e);
+    toast('Failed to load profile', 'error');
+  }
+}
+
+function closeProfile(e) {
+  if (e && e.target !== document.getElementById('profile-overlay')) return;
+  document.getElementById('profile-overlay').classList.add('hidden');
+}
+
+function switchProfileTab(tab) {
+  document.querySelectorAll('.profile-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  document.getElementById('profile-tab-style').classList.toggle('hidden', tab !== 'style');
+  document.getElementById('profile-tab-contacts').classList.toggle('hidden', tab !== 'contacts');
+}
+
+function renderWritingStyle(profile) {
+  const voice = (profile && profile.voice_profile) || {};
+  const toLines = v => Array.isArray(v) ? v : (v || '').split('\n').map(s => s.replace(/^-\s*/, '').trim()).filter(Boolean);
+  document.getElementById('profile-traits').value = toLines(voice.traits).join('\n');
+  document.getElementById('profile-examples').value = toLines(voice.examples).join('\n');
+}
+
+async function saveWritingStyle() {
+  const traits = document.getElementById('profile-traits').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  const examples = document.getElementById('profile-examples').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  const updatedVoice = Object.assign({}, (profileData && profileData.voice_profile) || {}, { traits, examples });
+  try {
+    await apiFetch(`${API}/api/profile`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice_profile: updatedVoice }),
+    });
+    if (profileData) profileData.voice_profile = updatedVoice;
+    toast('Writing style saved', 'success');
+  } catch (e) {
+    toast('Failed to save writing style', 'error');
+  }
+}
+
+// ── Contacts ──────────────────────────────────
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderContacts(contacts) {
+  contactsData = contacts;
+  const tbody = document.querySelector('#contacts-table tbody');
+  tbody.innerHTML = '';
+  contacts.forEach((c, i) => {
+    tbody.appendChild(buildContactRow(c, i));
+  });
+}
+
+function buildContactRow(c, i) {
+  const tr = document.createElement('tr');
+  tr.dataset.idx = i;
+  let topicsHtml = '';
+  try {
+    const topics = JSON.parse(c.topics || '[]');
+    topicsHtml = topics.map(t => `<span class="topic-tag">${esc(t)}</span>`).join('');
+  } catch (e) { topicsHtml = ''; }
+  tr.innerHTML = `
+    <td>${esc(c.name)}</td>
+    <td class="contact-email-cell">${esc(c.email)}</td>
+    <td>${esc(c.relationship_type)}</td>
+    <td>${esc(c.formality_level)}</td>
+    <td>${c.interaction_count || 0}</td>
+    <td class="topics-cell">${topicsHtml}</td>
+    <td class="contact-actions">
+      <button class="btn-micro" data-action="edit" data-idx="${i}">EDIT</button>
+      <button class="btn-micro btn-danger-micro" data-action="delete" data-idx="${i}">×</button>
+    </td>`;
+  return tr;
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const idx = parseInt(btn.dataset.idx);
+  const c = contactsData[idx];
+  if (!c) return;
+  if (btn.dataset.action === 'edit') startEditContact(c, idx);
+  if (btn.dataset.action === 'delete') confirmDeleteContact(c.email, idx);
+  if (btn.dataset.action === 'save-edit') commitEditContact(c, idx);
+  if (btn.dataset.action === 'cancel-edit') cancelEditContact(c, idx);
+});
+
+function startEditContact(c, idx) {
+  const tr = document.querySelector(`#contacts-table tr[data-idx="${idx}"]`);
+  if (!tr) return;
+  tr.innerHTML = `
+    <td><input class="profile-input-sm" id="ce-name-${idx}" value="${esc(c.name)}"></td>
+    <td class="contact-email-cell">${esc(c.email)}</td>
+    <td><input class="profile-input-sm" id="ce-rel-${idx}" value="${esc(c.relationship_type)}"></td>
+    <td><input class="profile-input-sm" id="ce-formal-${idx}" value="${esc(c.formality_level)}"></td>
+    <td>${c.interaction_count || 0}</td>
+    <td class="contact-actions">
+      <button class="btn-micro btn-primary-micro" data-action="save-edit" data-idx="${idx}">SAVE</button>
+      <button class="btn-micro" data-action="cancel-edit" data-idx="${idx}">CANCEL</button>
+    </td>`;
+}
+
+function cancelEditContact(c, idx) {
+  const tr = document.querySelector(`#contacts-table tr[data-idx="${idx}"]`);
+  if (!tr) return;
+  tr.replaceWith(buildContactRow(c, idx));
+}
+
+async function commitEditContact(c, idx) {
+  const name = document.getElementById(`ce-name-${idx}`).value.trim();
+  const rel = document.getElementById(`ce-rel-${idx}`).value.trim();
+  const formal = document.getElementById(`ce-formal-${idx}`).value.trim();
+  try {
+    await apiFetch(`${API}/api/contacts/${encodeURIComponent(c.email)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || null, relationship_type: rel || null, formality_level: formal || null }),
+    });
+    const updated = Object.assign({}, c, { name, relationship_type: rel, formality_level: formal });
+    contactsData[idx] = updated;
+    const tr = document.querySelector(`#contacts-table tr[data-idx="${idx}"]`);
+    if (tr) tr.replaceWith(buildContactRow(updated, idx));
+    toast('Contact updated', 'success');
+  } catch (e) {
+    toast('Failed to update contact', 'error');
+  }
+}
+
+async function confirmDeleteContact(email, idx) {
+  if (!confirm(`Delete contact ${email}?`)) return;
+  try {
+    await apiFetch(`${API}/api/contacts/${encodeURIComponent(email)}`, { method: 'DELETE' });
+    contactsData.splice(idx, 1);
+    renderContacts(contactsData);
+    toast('Contact deleted', 'success');
+  } catch (e) {
+    toast('Failed to delete contact', 'error');
+  }
+}
+
+async function addNewContact() {
+  const name = document.getElementById('new-contact-name').value.trim();
+  const email = document.getElementById('new-contact-email').value.trim();
+  const rel = document.getElementById('new-contact-rel').value.trim();
+  const formal = document.getElementById('new-contact-formal').value.trim();
+  if (!email) { toast('Email is required', 'error'); return; }
+  try {
+    await apiFetch(`${API}/api/contacts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name: name || null, relationship_type: rel || null, formality_level: formal || null }),
+    });
+    contactsData.push({ email, name, relationship_type: rel, formality_level: formal, interaction_count: 0 });
+    renderContacts(contactsData);
+    ['new-contact-name','new-contact-email','new-contact-rel','new-contact-formal'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    toast('Contact added', 'success');
+  } catch (e) {
+    toast('Failed to add contact', 'error');
+  }
 }
