@@ -30,6 +30,7 @@ def route(
     autonomy_level: int,
     has_attachments_to_send: bool,
     low_confidence_threshold: float = 0.70,
+    relationship_type: str = "unknown",
 ) -> RoutingDecision:
     """Determine the action to take for a classified email."""
 
@@ -42,13 +43,18 @@ def route(
     if not needs_reply:
         return RoutingDecision("skip", "No reply needed")
 
-    # Unknown sender: always draft regardless of level
-    if sender_priority == "unknown":
+    # Unknown sender: always review regardless of level
+    if sender_priority == "unknown" or relationship_type == "unknown":
         return RoutingDecision("review", "Unknown sender - always review")
 
-    # If we're attaching a file: always draft
+    # If we're attaching a file: always review
     if has_attachments_to_send:
         return RoutingDecision("review", "Email has Drive attachment - always review")
+
+    # Known non-personal contacts: always review regardless of autonomy level
+    # (colleague, manager, recruiter, vendor all require human eyes)
+    if relationship_type and relationship_type not in ("personal", "unknown"):
+        return RoutingDecision("review", f"Known {relationship_type} contact — always review")
 
     is_low_confidence = confidence < low_confidence_threshold
 

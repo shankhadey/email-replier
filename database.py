@@ -89,7 +89,19 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_review_user ON review_queue(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contacts_user ON user_contacts(user_id)")
+
+        # ── Schema migrations for user_contacts ────────────────────────────
+        _migrate_contacts_schema(conn)
         conn.commit()
+
+
+def _migrate_contacts_schema(conn: sqlite3.Connection) -> None:
+    """Add topics and priority_score columns to user_contacts if they don't exist yet."""
+    for col, definition in [("topics", "TEXT"), ("priority_score", "REAL DEFAULT 0")]:
+        try:
+            conn.execute(f"ALTER TABLE user_contacts ADD COLUMN {col} {definition}")
+        except Exception:
+            pass  # column already exists
 
 
 def _migrate_existing_tables(conn: sqlite3.Connection):
@@ -352,21 +364,27 @@ def upsert_contact(
     formality_level: Optional[str],
     interaction_count: int = 0,
     last_contact_at: Optional[str] = None,
+    topics: Optional[str] = None,
+    priority_score: float = 0.0,
 ) -> None:
     with get_conn() as conn:
         conn.execute(
             """
             INSERT INTO user_contacts
-                (user_id, email, name, relationship_type, formality_level, interaction_count, last_contact_at)
-            VALUES (?,?,?,?,?,?,?)
+                (user_id, email, name, relationship_type, formality_level,
+                 interaction_count, last_contact_at, topics, priority_score)
+            VALUES (?,?,?,?,?,?,?,?,?)
             ON CONFLICT(user_id, email) DO UPDATE SET
                 name=excluded.name,
                 relationship_type=excluded.relationship_type,
                 formality_level=excluded.formality_level,
                 interaction_count=excluded.interaction_count,
-                last_contact_at=excluded.last_contact_at
+                last_contact_at=excluded.last_contact_at,
+                topics=excluded.topics,
+                priority_score=excluded.priority_score
             """,
-            (user_id, email, name, relationship_type, formality_level, interaction_count, last_contact_at),
+            (user_id, email, name, relationship_type, formality_level,
+             interaction_count, last_contact_at, topics, priority_score),
         )
         conn.commit()
 
@@ -378,6 +396,15 @@ def get_contacts(user_id: str) -> list[dict]:
             (user_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_contact_by_email(user_id: str, email: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM user_contacts WHERE user_id=? AND email=?",
+            (user_id, email),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def update_contact_details(

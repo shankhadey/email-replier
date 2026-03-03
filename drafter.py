@@ -3,6 +3,7 @@ Draft email replies in Shankha's voice using Claude.
 Optionally injects calendar availability and GDrive attachment names.
 """
 
+import json
 import logging
 import os
 import time
@@ -56,6 +57,7 @@ def draft_reply(
     thread_context: Optional[str] = None,
     params: dict = None,
     model: str = None,
+    contact: Optional[dict] = None,
 ) -> str:
     """Draft a reply in the user's voice."""
     if params is None:
@@ -63,6 +65,27 @@ def draft_reply(
     if model is None:
         model = load_config()["anthropic_model"]
     system_prompt = _build_drafter_prompt(params)
+
+    # Append contact-specific tone instructions if available
+    if contact:
+        rel  = contact.get("relationship_type", "")
+        form = contact.get("formality_level", "")
+        try:
+            topics_list = json.loads(contact.get("topics") or "[]")
+        except Exception:
+            topics_list = []
+        parts = []
+        if form == "casual":
+            parts.append("Use a casual, friendly tone — this is someone the user knows well.")
+        elif form == "formal":
+            parts.append("Use a professional, formal tone.")
+        if rel == "personal":
+            parts.append("This is a personal contact.")
+        if topics_list:
+            parts.append(f"Shared topics with this contact: {', '.join(topics_list)}.")
+        if parts:
+            system_prompt += "\n\nContact context: " + " ".join(parts)
+
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
     context_parts = []

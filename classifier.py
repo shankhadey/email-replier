@@ -92,6 +92,7 @@ def classify_email(
     has_attachments: bool,
     params: dict = None,
     model: str = None,
+    contact: Optional[dict] = None,
 ) -> dict:
     """Classify an email and return structured classification."""
     if params is None:
@@ -101,8 +102,18 @@ def classify_email(
     system_prompt = _build_classifier_prompt(params)
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
-    user_prompt = f"""Classify this email:
+    contact_block = ""
+    if contact and contact.get("relationship_type"):
+        rel  = contact["relationship_type"]
+        form = contact.get("formality_level", "")
+        cnt  = contact.get("interaction_count", 0)
+        contact_block = (
+            f"\nKnown contact: {rel}, {cnt} prior interactions"
+            + (f", formality: {form}" if form else "")
+            + ".\n"
+        )
 
+    user_prompt = f"""Classify this email:{contact_block}
 From: {sender}
 Subject: {subject}
 Has Attachments: {has_attachments}

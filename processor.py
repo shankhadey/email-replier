@@ -41,6 +41,10 @@ def process_email(email: dict, user_id: str) -> dict:
     # Build gmail service once — reused for send_reply and mark_as_read
     gmail_service = auth.get_gmail_service(user_id)
 
+    # Contact lookup — used to enrich classification, drafting, and routing
+    sender_email = _extract_email(email["sender"]).lower()
+    contact = db.get_contact_by_email(user_id, sender_email)
+
     # Step 1: Classify
     classification = classify_email(
         sender=email["sender"],
@@ -49,8 +53,21 @@ def process_email(email: dict, user_id: str) -> dict:
         has_attachments=email["has_attachments"],
         params=params,
         model=model,
+        contact=contact,
     )
     logger.info(f"  Classification: {classification}")
+
+    # Override sender_priority with known contact data (more reliable than AI inference)
+    if contact:
+        rel = contact.get("relationship_type") or "unknown"
+        prio = contact.get("priority_score") or 0
+        if rel == "personal" or (rel in ("manager", "colleague") and prio >= 0.6):
+            classification["sender_priority"] = "high"
+        elif rel in ("manager", "colleague", "recruiter", "vendor"):
+            classification["sender_priority"] = "medium"
+        classification["relationship_type"] = rel
+    else:
+        classification["relationship_type"] = "unknown"
 
     priority = classification.get("sender_priority", "unknown")
     confidence_pct = round(classification.get("confidence", 0) * 100)
@@ -107,6 +124,7 @@ def process_email(email: dict, user_id: str) -> dict:
         thread_context=email.get("thread_context", ""),
         params=params,
         model=model,
+        contact=contact,
     )
 
     if not draft_body:
@@ -119,6 +137,7 @@ def process_email(email: dict, user_id: str) -> dict:
         autonomy_level=config["autonomy_level"],
         has_attachments_to_send=has_attachments_to_send,
         low_confidence_threshold=config["low_confidence_threshold"],
+        relationship_type=classification.get("relationship_type", "unknown"),
     )
     logger.info(f"  Routing: {decision.action} - {decision.reason}")
 
