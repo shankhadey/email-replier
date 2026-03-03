@@ -1217,6 +1217,18 @@ header {
   white-space: nowrap;
 }
 
+.topics-cell { max-width: 200px; }
+.topic-tag {
+  display: inline-block;
+  background: var(--bg-3);
+  color: var(--text-dim);
+  border-radius: 3px;
+  font-size: 10px;
+  padding: 1px 5px;
+  margin: 1px 2px 1px 0;
+  white-space: nowrap;
+}
+
 .btn-danger-micro {
   color: #e05c5c;
   border-color: rgba(224,92,92,0.3);

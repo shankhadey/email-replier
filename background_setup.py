@@ -206,7 +206,7 @@ Contacts:
     try:
         inbox_result = gmail_service.users().messages().list(
             userId="me",
-            q=f"in:inbox ({from_query}) after:{after_epoch}",
+            q=f"({from_query}) after:{after_epoch}",
             maxResults=300,
         ).execute()
         inbox_msgs = inbox_result.get("messages", [])

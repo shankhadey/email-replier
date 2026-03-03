@@ -767,12 +767,18 @@ function renderContacts(contacts) {
 function buildContactRow(c, i) {
   const tr = document.createElement('tr');
   tr.dataset.idx = i;
+  let topicsHtml = '';
+  try {
+    const topics = JSON.parse(c.topics || '[]');
+    topicsHtml = topics.map(t => `<span class="topic-tag">${esc(t)}</span>`).join('');
+  } catch (e) { topicsHtml = ''; }
   tr.innerHTML = `
     <td>${esc(c.name)}</td>
     <td class="contact-email-cell">${esc(c.email)}</td>
     <td>${esc(c.relationship_type)}</td>
     <td>${esc(c.formality_level)}</td>
     <td>${c.interaction_count || 0}</td>
+    <td class="topics-cell">${topicsHtml}</td>
     <td class="contact-actions">
       <button class="btn-micro" data-action="edit" data-idx="${i}">EDIT</button>
       <button class="btn-micro btn-danger-micro" data-action="delete" data-idx="${i}">×</button>
