@@ -343,9 +343,10 @@ header {
   font-family: var(--mono);
   font-size: 9px;
   color: rgba(91,141,238,0.5);
-  width: 34px;
+  min-width: 44px;
   flex-shrink: 0;
   text-align: right;
+  white-space: nowrap;
 }
 
 .activity-glyph {

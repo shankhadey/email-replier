@@ -105,7 +105,19 @@ Emails:
     if "voice_profile" not in params:
         params["voice_profile"] = {}
     traits = [line.lstrip("- ").strip() for line in traits_text.splitlines() if line.strip()]
+
+    # Extract 2-3 short example replies from actual sent emails
+    example_bodies = []
+    for e in emails:
+        body = (e.get("body") or "").strip()
+        # Short, substantive replies only (not one-liners, not novels)
+        if 40 <= len(body) <= 280 and "\n\n" not in body[:80]:
+            example_bodies.append(body)
+        if len(example_bodies) == 3:
+            break
+
     params["voice_profile"]["traits"] = traits
+    params["voice_profile"]["examples"] = example_bodies
     db.save_user_params(user_id, params)
     db.log_event(user_id, "setup_voice", "Writing style analysed and saved")
 
