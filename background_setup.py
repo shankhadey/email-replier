@@ -184,6 +184,7 @@ Contacts:
     response = client.messages.create(
         model="claude-opus-4-6",
         max_tokens=1500,
+        temperature=0.2,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -269,6 +270,7 @@ Contacts:
         topics_resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1000,
+            temperature=0.2,
             messages=[{"role": "user", "content": topics_prompt}],
         )
         topics_raw = topics_resp.content[0].text.strip()
