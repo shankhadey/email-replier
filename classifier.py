@@ -38,7 +38,7 @@ Definitions:
 - needs_calendar: Does the email ask for Shankha's availability or to schedule a meeting?
 - calendar_days_requested: If needs_calendar=true, how many days ahead is the email asking about? ("tomorrow"→2, "this week"→7, "next two weeks"→14, "this month"→30). Default 7 if unspecified. Otherwise null.
 - needs_gdrive: Does the email ask for a document (resume, proposal, report, etc)?
-- gdrive_query: If needs_gdrive=true, what search query to use in Drive (e.g. "resume", "Q3 proposal")? Otherwise null.
+- gdrive_query: If needs_gdrive=true, the most specific phrase to find the file in Drive. If the email names a specific file title, use that exact title (e.g. "no vibes just evals", "zipforms purchase agreement"). Prefer multi-word distinctive phrases over generic single words. Do NOT use generic terms like "workbook", "document", or "forms" alone. Otherwise null.
 - reasoning: Brief reason for your classification.
 """
 
